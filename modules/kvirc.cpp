@@ -17,12 +17,14 @@ class CKvircMod : public CModule {
 		FEMALE = 2,
 		BOT = 3
 	} m_eGender;
+	CString m_sColor;
 public:
 	MODCONSTRUCTOR(CKvircMod) {}
 
 	virtual bool OnLoad(const CString& sArgs, CString& sMessage) {
 		m_sAvatar = GetNV("Avatar");
 		m_eGender = static_cast<EGender>(GetNV("Gender").ToUInt());
+		m_sColor = GetNV("Color");
 		return true;
 	}
 
@@ -31,7 +33,7 @@ public:
 		if (!m_sAvatar.empty()) {
 			nCode |= 4;
 		}
-		sRealName = "\x03" + CString(nCode) + "\x0F" + sRealName;
+		sRealName = "\x03" + CString(nCode) + "\x0F" + (m_sColor.empty() ? "" : "\x03" + m_sColor + "\x0F") + sRealName;
 		return CONTINUE;
 	}
 
@@ -87,6 +89,14 @@ public:
 			} else {
 				PutModule("Avatar set");
 			}
+		} else if ("color" == sCmdName) {
+			m_sColor = sCommand.Token(1);
+			SetNV("Color", m_sColor);
+			if (m_sColor.empty()) {
+				PutModule("Nickcolor unset");
+			} else {
+				PutModule("Nickcolor set to " + m_sColor);
+			}
 		} else if ("show" == sCmdName) {
 			if (m_sAvatar.empty()){
 				PutModule("Avatar not set");
@@ -107,8 +117,13 @@ public:
 					PutModule("Gender: bot");
 					break;
 			}
+			if (m_sColor.empty()) {
+				PutModule("Nickcolor not set");
+			} else {
+				PutModule("Nickcolor: " + m_sColor);
+			}
 		} else {
-			PutModule("Commands: gender, avatar, show");
+			PutModule("Commands: gender, avatar, color, show");
 		}
 	}
 };
