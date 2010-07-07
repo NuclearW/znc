@@ -1,0 +1,116 @@
+/*
+ * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
+ */
+
+#include "Modules.h"
+#include "Nick.h"
+
+class CKvircMod : public CModule {
+	CString m_sAvatar;
+	enum EGender {
+		NONE = 0,
+		MALE = 1,
+		FEMALE = 2,
+		BOT = 3
+	} m_eGender;
+public:
+	MODCONSTRUCTOR(CKvircMod) {}
+
+	virtual bool OnLoad(const CString& sArgs, CString& sMessage) {
+		m_sAvatar = GetNV("Avatar");
+		m_eGender = static_cast<EGender>(GetNV("Gender").ToUInt());
+		return true;
+	}
+
+	virtual EModRet OnIRCRegistration(CString& sPass, CString& sNick, CString& sIdent, CString& sRealName) {
+		int nCode = m_eGender;
+		if (!m_sAvatar.empty()) {
+			nCode |= 4;
+		}
+		sRealName = "\x03" + CString(nCode) + "\x0F" + sRealName;
+		return CONTINUE;
+	}
+
+	virtual EModRet OnPrivCTCP(CNick& Nick, CString& sMessage) {
+		if (!m_sAvatar.empty() && "AVATAR" == sMessage) {
+			PutIRC("NOTICE " + Nick.GetNick() + " :\001AVATAR " + m_sAvatar + "\001");
+			return HALT;
+		}
+		return CONTINUE;
+	}
+
+	virtual EModRet OnChanCTCP(CNick& Nick, CChan& Channel, CString& sMessage) {
+		if (!m_sAvatar.empty() && "AVATAR" == sMessage) {
+			PutIRC("NOTICE " + Nick.GetNick() + " :\001AVATAR " + m_sAvatar + "\001");
+			return HALT;
+		}
+		return CONTINUE;
+	}
+
+	virtual void OnModCommand(const CString& sCommand) {
+		CString sCmdName = sCommand.Token(0).AsLower();
+		if ("gender" == sCmdName) {
+			CString sGender = sCommand.Token(1).AsLower();
+			if (sGender.empty()) {
+				PutModule("Usage: gender male|female|bot|none");
+				return;
+			}
+			switch (sGender[0]) {
+				case 'n':
+					m_eGender = NONE;
+					break;
+				case 'm':
+					m_eGender = MALE;
+					break;
+				case 'f':
+				case 'w':
+					m_eGender = FEMALE;
+					break;
+				case 'b':
+					m_eGender = BOT;
+					break;
+				default:
+					PutModule("Usage: gender male|female|bot|none");
+					return;
+			}
+			SetNV("Gender", CString(m_eGender));
+			PutModule("Gender set");
+		} else if ("avatar" == sCmdName) {
+			m_sAvatar = sCommand.Token(1, true);
+			SetNV("Avatar", m_sAvatar);
+			if (m_sAvatar.empty()) {
+				PutModule("Avatar unset");
+			} else {
+				PutModule("Avatar set");
+			}
+		} else if ("show" == sCmdName) {
+			if (m_sAvatar.empty()){
+				PutModule("Avatar not set");
+			} else {
+				PutModule("Avatar: " + m_sAvatar);
+			}
+			switch (m_eGender) {
+				case NONE:
+					PutModule("Gender: none");
+					break;
+				case MALE:
+					PutModule("Gender: male");
+					break;
+				case FEMALE:
+					PutModule("Gender: female");
+					break;
+				case BOT:
+					PutModule("Gender: bot");
+					break;
+			}
+		} else {
+			PutModule("Commands: gender, avatar, show");
+		}
+	}
+};
+
+MODULEDEFS(CKvircMod, "Allows to set your gender and avatar, so KVIrc users will see it.")
