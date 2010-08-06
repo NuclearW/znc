@@ -104,15 +104,7 @@ CString CZNC::GetUptime() const {
 }
 
 bool CZNC::OnBoot() {
-	if (!GetModules().OnBoot()) {
-		return false;
-	}
-
-	for (map<CString,CUser*>::iterator it = m_msUsers.begin(); it != m_msUsers.end(); ++it) {
-		if (!it->second->GetModules().OnBoot()) {
-			return false;
-		}
-	}
+	ALLMODULECALL(OnBoot(), return false);
 
 	return true;
 }
@@ -152,8 +144,8 @@ bool CZNC::ConnectUser(CUser *pUser) {
 
 	m_sConnectThrottle.AddItem(pServer->GetName());
 
-	DEBUG("User [" << pUser->GetUserName() << "] is connecting to [" << pServer->GetName() << " " << pServer->GetPort() << "] ...");
-	pUser->PutStatus("Attempting to connect to [" + pServer->GetName() + " " + CString(pServer->GetPort()) + "] ...");
+	DEBUG("User [" << pUser->GetUserName() << "] is connecting to [" << pServer->GetString(false) << "] ...");
+	pUser->PutStatus("Attempting to connect to [" + pServer->GetString(false) + "] ...");
 
 	pIRCSock = new CIRCSock(pUser);
 	pIRCSock->SetPass(pServer->GetPass());
@@ -466,6 +458,8 @@ void CZNC::InitDirs(const CString& sArgvPath, const CString& sDataDir) {
 	} else {
 		m_sZNCPath = sDataDir;
 	}
+
+	m_sSSLCertFile = m_sZNCPath + "/znc.pem";
 }
 
 CString CZNC::GetConfPath(bool bAllowMkDir) const {
@@ -537,12 +531,11 @@ bool CZNC::WriteConfig() {
 		return false;
 	}
 
-	if (GetModules().OnWriteConfig(m_LockFile)) {
-		return false;
-	}
+	GLOBALMODULECALL(OnWriteConfig(m_LockFile), NULL, NULL, return false);
 
 	m_LockFile.Write("AnonIPLimit  = " + CString(m_uiAnonIPLimit) + "\n");
 	m_LockFile.Write("MaxBufferSize= " + CString(m_uiMaxBufferSize) + "\n");
+	m_LockFile.Write("SSLCertFile  = " + CString(m_sSSLCertFile) + "\n");
 
 	for (size_t l = 0; l < m_vpListeners.size(); l++) {
 		CListener* pListener = m_vpListeners[l];
@@ -1002,11 +995,7 @@ bool CZNC::ParseConfig(const CString& sConfig)
 
 bool CZNC::RehashConfig(CString& sError)
 {
-	GetModules().OnPreRehash();
-	for (map<CString, CUser*>::iterator itb = m_msUsers.begin();
-			itb != m_msUsers.end(); ++itb) {
-		itb->second->GetModules().OnPreRehash();
-	}
+	ALLMODULECALL(OnPreRehash(), );
 
 	// This clears m_msDelUsers
 	HandleUserDeletion();
@@ -1016,11 +1005,7 @@ bool CZNC::RehashConfig(CString& sError)
 	m_msUsers.clear();
 
 	if (DoRehash(sError)) {
-		GetModules().OnPostRehash();
-		for (map<CString, CUser*>::iterator it = m_msUsers.begin();
-				it != m_msUsers.end(); ++it) {
-			it->second->GetModules().OnPostRehash();
-		}
+		ALLMODULECALL(OnPostRehash(), );
 
 		return true;
 	}
@@ -1628,6 +1613,9 @@ bool CZNC::DoRehash(CString& sError)
 				} else if (sName.Equals("MaxBufferSize")) {
 					m_uiMaxBufferSize = sValue.ToUInt();
 					continue;
+				} else if (sName.Equals("SSLCertFile")) {
+					m_sSSLCertFile = sValue;
+					continue;
 				}
 			}
 
@@ -1717,7 +1705,7 @@ bool CZNC::DoRehash(CString& sError)
 		if (it->m_pUser) {
 			MODULECALL(OnConfigLine(it->m_sName, it->m_sValue, it->m_pUser, it->m_pChan), it->m_pUser, NULL, bHandled = true);
 		} else {
-			bHandled = GetModules().OnConfigLine(it->m_sName, it->m_sValue, it->m_pUser, it->m_pChan);
+			GLOBALMODULECALL(OnConfigLine(it->m_sName, it->m_sValue, it->m_pUser, it->m_pChan), it->m_pUser, NULL, bHandled = true);
 		}
 		if (!bHandled) {
 			CUtils::PrintMessage("unhandled global module config line [GM:" + it->m_sName + "] = [" + it->m_sValue + "]");
@@ -1725,13 +1713,17 @@ bool CZNC::DoRehash(CString& sError)
 	}
 
 	if (pChan) {
-		// TODO last <Chan> not closed
+		sError = "Last <Chan> section not properly closed. File truncated?";
+		CUtils::PrintError(sError);
 		delete pChan;
+		return false;
 	}
 
 	if (pUser) {
-		// TODO last <User> not closed
+		sError = "Last <User> section not properly closed. File truncated?";
+		CUtils::PrintError(sError);
 		delete pUser;
+		return false;
 	}
 
 	if (m_msUsers.empty()) {
@@ -1850,11 +1842,11 @@ bool CZNC::AddUser(CUser* pUser, CString& sErrorRet) {
 				<< sErrorRet << "]");
 		return false;
 	}
-	if (GetModules().OnAddUser(*pUser, sErrorRet)) {
+	GLOBALMODULECALL(OnAddUser(*pUser, sErrorRet), pUser, NULL,
 		DEBUG("AddUser [" << pUser->GetUserName() << "] aborted by a module ["
 			<< sErrorRet << "]");
 		return false;
-	}
+	);
 	m_msUsers[pUser->GetUserName()] = pUser;
 	return true;
 }
@@ -1951,9 +1943,7 @@ CZNC::TrafficStatsMap CZNC::GetTrafficStats(TrafficStatsPair &Users,
 
 void CZNC::AuthUser(CSmartPtr<CAuthBase> AuthClass) {
 	// TODO unless the auth module calls it, CUser::IsHostAllowed() is not honoured
-	if (GetModules().OnLoginAttempt(AuthClass)) {
-		return;
-	}
+	GLOBALMODULECALL(OnLoginAttempt(AuthClass), NULL, NULL, return);
 
 	CUser* pUser = FindUser(AuthClass->GetUsername());
 

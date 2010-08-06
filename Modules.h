@@ -255,7 +255,7 @@ public:
 
 	/** This function throws CModule::UNLOAD which causes this module to be unloaded.
 	 */
-	void Unload();
+	void Unload() { throw UNLOAD; }
 
 	/** This module hook is called when a module is loaded
 	 *  @param sArgsi The arguments for the modules.
@@ -638,6 +638,19 @@ public:
 	 */
 	virtual EModRet OnTopic(CNick& Nick, CChan& Channel, CString& sTopic);
 
+	/** Called for every CAP received via CAP LS from server.
+	 *  @param sCap capability supported by server.
+	 *  @return true if your module supports this CAP and
+	 *          needs to turn it on with CAP REQ.
+	 */
+	virtual bool OnServerCapAvailable(const CString& sCap);
+	/** Called for every CAP accepted or rejected by server
+	 *  (with CAP ACK or CAP NAK after our CAP REQ).
+	 *  @param sCap capability accepted/rejected by server.
+	 *  @param sSuccess true if capability was accepted, false if rejected.
+	 */
+	virtual void OnServerCapResult(const CString& sCap, bool bSuccess);
+
 	/** This module hook is called just before ZNC tries to join a channel
 	 *  by itself because it's in the config but wasn't joined yet.
 	 *  @param Channel The channel which will be joined.
@@ -645,7 +658,7 @@ public:
 	 */
 	virtual EModRet OnTimerAutoJoin(CChan& Channel);
 
-	ModHandle GetDLL();
+	ModHandle GetDLL() { return m_pDLL; }
 	static double GetCoreVersion() { return VERSION; }
 
 	/** This function sends a given raw IRC line to the IRC server, if we
@@ -734,9 +747,9 @@ public:
 	// !Socket stuff
 
 	bool LoadRegistry();
-	bool SaveRegistry();
+	bool SaveRegistry() const;
 	bool SetNV(const CString & sName, const CString & sValue, bool bWriteToDisk = true);
-	CString GetNV(const CString & sName);
+	CString GetNV(const CString & sName) const;
 	bool DelNV(const CString & sName, bool bWriteToDisk = true);
 	MCString::iterator FindNV(const CString & sName) { return m_mssRegistry.find(sName); }
 	MCString::iterator EndNV() { return m_mssRegistry.end(); }
@@ -868,6 +881,9 @@ public:
 	bool OnTopic(CNick& Nick, CChan& Channel, CString& sTopic);
 	bool OnTimerAutoJoin(CChan& Channel);
 
+	bool OnServerCapAvailable(const CString& sCap);
+	bool OnServerCapResult(const CString& sCap, bool bSuccess);
+
 	CModule* FindModule(const CString& sModule) const;
 	bool LoadModule(const CString& sModule, const CString& sArgs, CUser* pUser, CString& sRetMsg);
 	bool UnloadModule(const CString& sModule);
@@ -953,12 +969,28 @@ public:
 	/** This function behaves like CModule::OnRaw(), but is also called
 	 *  before the client successfully logged in to ZNC. You should always
 	 *  prefer to use CModule::OnRaw() if possible.
-	 *  @param pClient The client.
 	 *  @param sLine The raw traffic line which the client sent.
 	 *  @todo Why doesn't this use m_pUser and m_pClient?
 	 *        (Well, ok, m_pUser isn't known yet...)
 	 */
-	virtual EModRet OnUnknownUserRaw(CClient* pClient, CString& sLine);
+	virtual EModRet OnUnknownUserRaw(CString& sLine);
+
+	/** Called when a client told us CAP LS. Use ssCaps.insert("cap-name")
+	 *  for announcing capabilities which your module supports.
+	 *  @param ssCaps set of caps which will be sent to client.
+	 */
+	virtual void OnClientCapLs(SCString& ssCaps);
+	/** Called only to check if your module supports turning on/off named capability.
+	 *  @param sCap name of capability.
+	 *  @param bState On or off, depending on which case is interesting for client.
+	 *  @return true if your module supports this capability in the specified state.
+	 */
+	virtual bool IsClientCapSupported(const CString& sCap, bool bState);
+	/** Called when we actually need to turn a capability on or off for a client.
+	 *  @param sCap name of wanted capability.
+	 *  @param bState On or off, depending on which case client needs.
+	 */
+	virtual void OnClientCapRequest(const CString& sCap, bool bState);
 private:
 };
 
@@ -970,10 +1002,13 @@ public:
 	bool OnWriteConfig(CFile& Config);
 	bool OnAddUser(CUser& User, CString& sErrorRet);
 	bool OnDeleteUser(CUser& User);
-	void OnClientConnect(CZNCSock* pSock, const CString& sHost, unsigned short uPort);
+	bool OnClientConnect(CZNCSock* pSock, const CString& sHost, unsigned short uPort);
 	bool OnLoginAttempt(CSmartPtr<CAuthBase> Auth);
-	void OnFailedLogin(const CString& sUsername, const CString& sRemoteIP);
-	bool OnUnknownUserRaw(CClient* pClient, CString& sLine);
+	bool OnFailedLogin(const CString& sUsername, const CString& sRemoteIP);
+	bool OnUnknownUserRaw(CString& sLine);
+	bool OnClientCapLs(SCString& ssCaps);
+	bool IsClientCapSupported(const CString& sCap, bool bState);
+	bool OnClientCapRequest(const CString& sCap, bool bState);
 private:
 };
 
