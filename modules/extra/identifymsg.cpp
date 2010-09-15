@@ -287,8 +287,10 @@ private:
 			return HALT;
 		}
 
-		Put(":" + Nick.GetNickMask() + " PRIVMSG " + Channel.GetName() + " :",
-				"\001" + sMessage + "\001", cSign);
+		if (!Channel.IsDetached()) {
+			Put(":" + Nick.GetNickMask() + " PRIVMSG " + Channel.GetName() + " :",
+					"\001" + sMessage + "\001", cSign);
+		}
 		return HALT;
 	}
 
