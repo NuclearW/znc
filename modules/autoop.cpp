@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -352,7 +352,7 @@ public:
 				for (size_t a = 0; a < Chans.size(); a++) {
 					const CChan& Chan = *Chans[a];
 
-					CNick* pNick = Chan.FindNick(Nick.GetNick());
+					const CNick* pNick = Chan.FindNick(Nick.GetNick());
 
 					if (pNick) {
 						if (pNick->HasPerm(CChan::Op) && pUser->ChannelMatches(Chan.GetName())) {
@@ -446,7 +446,7 @@ public:
 			const CChan& Chan = *Chans[a];
 
 			if (Chan.HasPerm(CChan::Op) && User.ChannelMatches(Chan.GetName())) {
-				CNick* pNick = Chan.FindNick(Nick.GetNick());
+				const CNick* pNick = Chan.FindNick(Nick.GetNick());
 
 				if (pNick && !pNick->HasPerm(CChan::Op)) {
 					PutIRC("MODE " + Chan.GetName() + " +o " + Nick.GetNick());

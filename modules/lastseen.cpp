@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -24,6 +24,17 @@ private:
 		SetNV(pUser->GetUserName(), CString(time(NULL)));
 	}
 
+	const CString FormatLastSeen(const CUser *pUser, const char* sDefault = "") {
+		time_t last = GetTime(pUser);
+		if (last < 1) {
+			return sDefault;
+		} else {
+			char buf[1024];
+			strftime(buf, sizeof(buf) - 1, "%c", localtime(&last));
+			return buf;
+		}
+	}
+
 	typedef multimap<time_t, CUser*> MTimeMulti;
 	typedef map<CString, CUser*> MUsers;
 public:
@@ -43,7 +54,6 @@ public:
 		}
 
 		if (sCommand == "show") {
-			char buf[1024];
 			const MUsers& mUsers = CZNC::Get().GetUserMap();
 			MUsers::const_iterator it;
 			CTable Table;
@@ -52,18 +62,9 @@ public:
 			Table.AddColumn("Last Seen");
 
 			for (it = mUsers.begin(); it != mUsers.end(); ++it) {
-				CUser *pUser = it->second;
-				time_t last = GetTime(pUser);
-
 				Table.AddRow();
 				Table.SetCell("User", it->first);
-
-				if (last == 0)
-					Table.SetCell("Last Seen", "never");
-				else {
-					strftime(buf, sizeof(buf), "%c", localtime(&last));
-					Table.SetCell("Last Seen", buf);
-				}
+				Table.SetCell("Last Seen", FormatLastSeen(it->second));
 			}
 
 			PutModule(Table);
@@ -93,7 +94,10 @@ public:
 	virtual CString GetWebMenuTitle() { return "Last Seen"; }
 
 	virtual bool OnWebRequest(CWebSock& WebSock, const CString& sPageName, CTemplate& Tmpl) {
-		if (sPageName.empty() || sPageName == "index") {
+		if (sPageName == "index") {
+			CModules& GModules = CZNC::Get().GetModules();
+			Tmpl["WebAdminLoaded"] = CString(GModules.FindModule("webadmin") != NULL);
+
 			MTimeMulti mmSorted;
 			const MUsers& mUsers = CZNC::Get().GetUserMap();
 
@@ -101,19 +105,13 @@ public:
 				mmSorted.insert(pair<time_t, CUser*>(GetTime(uit->second), uit->second));
 			}
 
-			char buf[1024] = {0};
-
 			for (MTimeMulti::const_iterator it = mmSorted.begin(); it != mmSorted.end(); ++it) {
 				CUser *pUser = it->second;
 				CTemplate& Row = Tmpl.AddRow("UserLoop");
 
 				Row["Username"] = pUser->GetUserName();
 				Row["IsSelf"] = CString(pUser == WebSock.GetSession()->GetUser());
-
-				if(it->first > 0) {
-					strftime(buf, sizeof(buf), "%c", localtime(&it->first));
-					Row["LastSeen"] = buf;
-				}
+				Row["LastSeen"] = FormatLastSeen(pUser, "never");
 
 				Row["Info"] = CString(pUser->GetClients().size()) +
 					" client" + CString(pUser->GetClients().size() == 1 ? "" : "s");
@@ -140,6 +138,19 @@ public:
 
 		return false;
 	}
+
+	virtual bool OnEmbeddedWebRequest(CWebSock& WebSock, const CString& sPageName, CTemplate& Tmpl) {
+		if (sPageName == "webadmin/user" && WebSock.GetSession()->IsAdmin()) {
+			CUser* pUser = CZNC::Get().FindUser(Tmpl["Username"]);
+			if (pUser) {
+				Tmpl["LastSeen"] = FormatLastSeen(pUser);
+			}
+			return true;
+		}
+
+		return false;
+	}
+
 };
 
 GLOBALMODULEDEFS(CLastSeenMod, "Collects data about when a user last logged in")

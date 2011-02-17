@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -51,7 +51,6 @@ protected:
 CUser::CUser(const CString& sUserName) {
 	m_pIRCSock = NULL;
 	m_fTimezoneOffset = 0;
-	m_uConnectTime = 0;
 	SetUserName(sUserName);
 	m_sNick = m_sCleanUserName;
 	m_sIdent = m_sCleanUserName;
@@ -70,7 +69,7 @@ CUser::CUser(const CString& sUserName) {
 	m_bDenyLoadMod = false;
 	m_bAdmin= false;
 	m_bIRCAway = false;
-	m_bDenySetVHost= false;
+	m_bDenySetBindHost= false;
 	m_sStatusPrefix = "*";
 	m_sChanPrefixes = "";
 	m_uBufferCount = 50;
@@ -157,8 +156,21 @@ void CUser::DelServers()
 	m_vServers.clear();
 }
 
-void CUser::IRCConnected(CIRCSock* pIRCSock) {
+void CUser::SetIRCSocket(CIRCSock* pIRCSock) {
 	m_pIRCSock = pIRCSock;
+}
+
+bool CUser::IsIRCConnected() const
+{
+	const CIRCSock* pSock = GetIRCSock();
+
+	if (!pSock)
+		return false;
+
+	if (!pSock->IsConnected())
+		return false;
+
+	return true;
 }
 
 void CUser::IRCDisconnected() {
@@ -195,7 +207,8 @@ CString& CUser::ExpandString(const CString& sStr, CString& sRet) const {
 	sRet.Replace("%altnick%", GetAltNick());
 	sRet.Replace("%ident%", GetIdent());
 	sRet.Replace("%realname%", GetRealName());
-	sRet.Replace("%vhost%", GetVHost());
+	sRet.Replace("%vhost%", GetBindHost());
+	sRet.Replace("%bindhost%", GetBindHost());
 	sRet.Replace("%version%", CZNC::GetVersion());
 	sRet.Replace("%time%", sTime);
 	sRet.Replace("%uptime%", CZNC::Get().GetUptime());
@@ -348,8 +361,8 @@ bool CUser::Clone(const CUser& User, CString& sErrorRet, bool bCloneChans) {
 	SetIdent(User.GetIdent(false));
 	SetRealName(User.GetRealName());
 	SetStatusPrefix(User.GetStatusPrefix());
-	SetVHost(User.GetVHost());
-	SetDCCVHost(User.GetDCCVHost());
+	SetBindHost(User.GetBindHost());
+	SetDCCBindHost(User.GetDCCBindHost());
 	SetQuitMsg(User.GetQuitMsg());
 	SetSkinName(User.GetSkinName());
 	SetDefaultChanModes(User.GetDefaultChanModes());
@@ -451,7 +464,7 @@ bool CUser::Clone(const CUser& User, CString& sErrorRet, bool bCloneChans) {
 	SetUseClientIP(User.UseClientIP());
 	SetDenyLoadMod(User.DenyLoadMod());
 	SetAdmin(User.IsAdmin());
-	SetDenySetVHost(User.DenySetVHost());
+	SetDenySetBindHost(User.DenySetBindHost());
 	SetTimestampAppend(User.GetTimestampAppend());
 	SetTimestampPrepend(User.GetTimestampPrepend());
 	SetTimestampFormat(User.GetTimestampFormat());
@@ -638,8 +651,8 @@ bool CUser::WriteConfig(CFile& File) {
 	PrintLine(File, "AltNick", GetAltNick());
 	PrintLine(File, "Ident", GetIdent());
 	PrintLine(File, "RealName", GetRealName());
-	PrintLine(File, "VHost", GetVHost());
-	PrintLine(File, "DCCVHost", GetDCCVHost());
+	PrintLine(File, "BindHost", GetBindHost());
+	PrintLine(File, "DCCBindHost", GetDCCBindHost());
 	PrintLine(File, "QuitMsg", GetQuitMsg());
 	if (CZNC::Get().GetStatusPrefix() != GetStatusPrefix())
 		PrintLine(File, "StatusPrefix", GetStatusPrefix());
@@ -651,7 +664,7 @@ bool CUser::WriteConfig(CFile& File) {
 	PrintLine(File, "BounceDCCs", CString(BounceDCCs()));
 	PrintLine(File, "DenyLoadMod", CString(DenyLoadMod()));
 	PrintLine(File, "Admin", CString(IsAdmin()));
-	PrintLine(File, "DenySetVHost", CString(DenySetVHost()));
+	PrintLine(File, "DenySetBindHost", CString(DenySetBindHost()));
 	PrintLine(File, "DCCLookupMethod", CString((UseClientIP()) ? "client" : "default"));
 	PrintLine(File, "TimestampFormat", GetTimestampFormat());
 	PrintLine(File, "AppendTimestamp", CString(GetTimestampAppend()));
@@ -713,7 +726,7 @@ bool CUser::WriteConfig(CFile& File) {
 		}
 	}
 
-	MODULECALL(OnWriteUserConfig(File), this, NULL,);
+	MODULECALL(OnWriteUserConfig(File), this, NULL, NOTHING);
 
 	File.Write("</User>\n");
 
@@ -741,6 +754,7 @@ void CUser::JoinChans() {
 	// still be able to join the rest of your channels.
 	unsigned int start = rand() % m_vChans.size();
 	unsigned int uJoins = m_uMaxJoins;
+	set<CChan*> sChans;
 	for (unsigned int a = 0; a < m_vChans.size(); a++) {
 		unsigned int idx = (start + a) % m_vChans.size();
 		CChan* pChan = m_vChans[idx];
@@ -748,11 +762,50 @@ void CUser::JoinChans() {
 			if (!JoinChan(pChan))
 				continue;
 
+			sChans.insert(pChan);
+
 			// Limit the number of joins
 			if (uJoins != 0 && --uJoins == 0)
-				return;
+				break;
 		}
 	}
+
+	while (!sChans.empty())
+		JoinChans(sChans);
+}
+
+void CUser::JoinChans(set<CChan*>& sChans) {
+	CString sKeys, sJoin;
+	bool bHaveKey = false;
+	size_t uiJoinLength = strlen("JOIN ");
+
+	while (!sChans.empty()) {
+		set<CChan*>::iterator it = sChans.begin();
+		const CString& sName = (*it)->GetName();
+		const CString& sKey = (*it)->GetKey();
+		size_t len = sName.length() + sKey.length();
+		len += 2; // two comma
+
+		if (!sKeys.empty() && uiJoinLength + len >= 512)
+			break;
+
+		if (!sJoin.empty()) {
+			sJoin += ",";
+			sKeys += ",";
+		}
+		uiJoinLength += len;
+		sJoin += sName;
+		if (!sKey.empty()) {
+			sKeys += sKey;
+			bHaveKey = true;
+		}
+		sChans.erase(it);
+	}
+
+	if (bHaveKey)
+		PutIRC("JOIN " + sJoin + " " + sKeys);
+	else
+		PutIRC("JOIN " + sJoin);
 }
 
 bool CUser::JoinChan(CChan* pChan) {
@@ -762,8 +815,6 @@ bool CUser::JoinChan(CChan* pChan) {
 	} else {
 		pChan->IncJoinTries();
 		MODULECALL(OnTimerAutoJoin(*pChan), this, NULL, return false);
-
-		PutIRC("JOIN " + pChan->GetName() + " " + pChan->GetKey());
 		return true;
 	}
 	return false;
@@ -925,6 +976,17 @@ CServer* CUser::GetCurrentServer() const {
 	return m_vServers[uIdx];
 }
 
+bool CUser::SetNextServer(const CServer* pServer) {
+	for (unsigned int a = 0; a < m_vServers.size(); a++) {
+		if (m_vServers[a] == pServer) {
+			m_uServerIdx = a;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool CUser::CheckPass(const CString& sPass) const {
 	switch (m_eHashType)
 	{
@@ -970,8 +1032,8 @@ CString CUser::GetLocalIP() {
 }
 
 CString CUser::GetLocalDCCIP() {
-	if (!GetDCCVHost().empty())
-		return GetDCCVHost();
+	if (!GetDCCBindHost().empty())
+		return GetDCCBindHost();
 	return GetLocalIP();
 }
 
@@ -1151,8 +1213,8 @@ void CUser::SetNick(const CString& s) { m_sNick = s; }
 void CUser::SetAltNick(const CString& s) { m_sAltNick = s; }
 void CUser::SetIdent(const CString& s) { m_sIdent = s; }
 void CUser::SetRealName(const CString& s) { m_sRealName = s; }
-void CUser::SetVHost(const CString& s) { m_sVHost = s; }
-void CUser::SetDCCVHost(const CString& s) { m_sDCCVHost = s; }
+void CUser::SetBindHost(const CString& s) { m_sBindHost = s; }
+void CUser::SetDCCBindHost(const CString& s) { m_sDCCBindHost = s; }
 void CUser::SetPass(const CString& s, eHashType eHash, const CString& sSalt) {
 	m_sPass = s;
 	m_eHashType = eHash;
@@ -1163,7 +1225,7 @@ void CUser::SetBounceDCCs(bool b) { m_bBounceDCCs = b; }
 void CUser::SetUseClientIP(bool b) { m_bUseClientIP = b; }
 void CUser::SetDenyLoadMod(bool b) { m_bDenyLoadMod = b; }
 void CUser::SetAdmin(bool b) { m_bAdmin = b; }
-void CUser::SetDenySetVHost(bool b) { m_bDenySetVHost = b; }
+void CUser::SetDenySetBindHost(bool b) { m_bDenySetBindHost = b; }
 void CUser::SetDefaultChanModes(const CString& s) { m_sDefaultChanModes = s; }
 void CUser::SetIRCServer(const CString& s) { m_sIRCServer = s; }
 void CUser::SetQuitMsg(const CString& s) { m_sQuitMsg = s; }
@@ -1216,30 +1278,16 @@ const CString& CUser::GetNick(bool bAllowDefault) const { return (bAllowDefault 
 const CString& CUser::GetAltNick(bool bAllowDefault) const { return (bAllowDefault && m_sAltNick.empty()) ? GetCleanUserName() : m_sAltNick; }
 const CString& CUser::GetIdent(bool bAllowDefault) const { return (bAllowDefault && m_sIdent.empty()) ? GetCleanUserName() : m_sIdent; }
 const CString& CUser::GetRealName() const { return m_sRealName.empty() ? m_sUserName : m_sRealName; }
-const CString& CUser::GetVHost() const { return m_sVHost; }
-const CString& CUser::GetDCCVHost() const { return m_sDCCVHost; }
+const CString& CUser::GetBindHost() const { return m_sBindHost; }
+const CString& CUser::GetDCCBindHost() const { return m_sDCCBindHost; }
 const CString& CUser::GetPass() const { return m_sPass; }
 CUser::eHashType CUser::GetPassHashType() const { return m_eHashType; }
 const CString& CUser::GetPassSalt() const { return m_sPassSalt; }
 
-bool CUser::ConnectPaused() {
-	if (!m_uConnectTime) {
-		m_uConnectTime = time(NULL);
-		return false;
-	}
-
-	if (time(NULL) - m_uConnectTime >= 5) {
-		m_uConnectTime = time(NULL);
-		return false;
-	}
-
-	return true;
-}
-
 bool CUser::UseClientIP() const { return m_bUseClientIP; }
 bool CUser::DenyLoadMod() const { return m_bDenyLoadMod; }
 bool CUser::IsAdmin() const { return m_bAdmin; }
-bool CUser::DenySetVHost() const { return m_bDenySetVHost; }
+bool CUser::DenySetBindHost() const { return m_bDenySetBindHost; }
 bool CUser::MultiClients() const { return m_bMultiClients; }
 bool CUser::BounceDCCs() const { return m_bBounceDCCs; }
 const CString& CUser::GetStatusPrefix() const { return m_sStatusPrefix; }

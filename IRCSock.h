@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -9,6 +9,7 @@
 #ifndef _IRCSOCK_H
 #define _IRCSOCK_H
 
+#include "zncconfig.h"
 #include "Socket.h"
 #include "Nick.h"
 
@@ -55,6 +56,16 @@ public:
 	void ResetChans();
 	void Quit(const CString& sQuitMsg = "");
 
+	/** You can call this from CModule::OnServerCapResult to suspend
+	 *  sending other CAP requests and CAP END for a while. Each
+	 *  call to PauseCap should be balanced with a call to ResumeCap.
+	 */
+	void PauseCap();
+	/** If you used PauseCap, call this when CAP negotiation and logging in
+	 *  should be resumed again.
+	 */
+	void ResumeCap();
+
 	// Setters
 	void SetPass(const CString& s) { m_sPass = s; }
 	// !Setters
@@ -88,6 +99,7 @@ private:
 	void ParseISupport(const CString& sLine);
 	// This is called when we connect and the nick we want is already taken
 	void SendAltNick(const CString& sBadNick);
+	void SendNextCap();
 protected:
 	bool                                m_bISpoofReleased;
 	bool                                m_bAuthed;
@@ -102,8 +114,13 @@ protected:
 	CString                             m_sPass;
 	map<CString, CChan*>                m_msChans;
 	unsigned int                        m_uMaxNickLen;
+	unsigned int                        m_uCapPaused;
 	SCString                            m_ssAcceptedCaps;
 	SCString                            m_ssPendingCaps;
+	time_t                              m_lastCTCP;
+	unsigned int                        m_uNumCTCP;
+	static const time_t                 m_uCTCPFloodTime;
+	static const unsigned int           m_uCTCPFloodCount;
 };
 
 #endif // !_IRCSOCK_H

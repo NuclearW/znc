@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -21,6 +21,38 @@
 using std::stringstream;
 using std::make_pair;
 
+/* Stuff to be able to write this:
+   // i will be name of local variable, see below
+   // pUser can be NULL if only global modules are needed
+   FOR_EACH_MODULE(i, pUser) {
+       // i is local variable of type CModules::iterator,
+	   // so *i has type CModule*
+   }
+*/
+struct FOR_EACH_MODULE_Type {
+	bool bOnCMuser;
+	CModules CMtemp;
+	CModules& CMuser;
+	FOR_EACH_MODULE_Type(CUser* pUser) : CMuser(pUser ? pUser->GetModules() : CMtemp) {
+		bOnCMuser = false;
+	}
+	operator bool() { return false; }
+};
+
+inline bool FOR_EACH_MODULE_CanContinue(FOR_EACH_MODULE_Type& state, CModules::iterator& i) {
+	if (!state.bOnCMuser && i == CZNC::Get().GetModules().end()) {
+		i = state.CMuser.begin();
+		state.bOnCMuser = true;
+	}
+	if (state.bOnCMuser && i == state.CMuser.end()) {
+		return false;
+	}
+	return true;
+}
+
+#define FOR_EACH_MODULE(I, pUser)\
+	if (FOR_EACH_MODULE_Type FOR_EACH_MODULE_Var = pUser) {} else\
+	for (CModules::iterator I = CZNC::Get().GetModules().begin(); FOR_EACH_MODULE_CanContinue(FOR_EACH_MODULE_Var, I); ++I)
 
 class CWebAdminMod : public CGlobalModule {
 public:
@@ -198,20 +230,25 @@ public:
 		sArg = WebSock.GetParam("chanmodes"); if (!sArg.empty()) { pNewUser->SetDefaultChanModes(sArg); }
 		sArg = WebSock.GetParam("timestampformat"); if (!sArg.empty()) { pNewUser->SetTimestampFormat(sArg); }
 
-		sArg = WebSock.GetParam("vhost");
-		// To change VHosts be admin or don't have DenySetVHost
-		if (spSession->IsAdmin() || !spSession->GetUser()->DenySetVHost()) {
+		sArg = WebSock.GetParam("bindhost");
+		// To change BindHosts be admin or don't have DenySetBindHost
+		if (spSession->IsAdmin() || !spSession->GetUser()->DenySetBindHost()) {
+			CString sArg2 = WebSock.GetParam("dccbindhost");
 			if (!sArg.empty()) {
-				pNewUser->SetVHost(sArg);
+				pNewUser->SetBindHost(sArg);
+			}
+			if (!sArg2.empty()) {
+				pNewUser->SetDCCBindHost(sArg2);
 			}
 		} else if (pUser){
-			pNewUser->SetVHost(pUser->GetVHost());
+			pNewUser->SetBindHost(pUser->GetBindHost());
+			pNewUser->SetDCCBindHost(pUser->GetDCCBindHost());
 		}
 
 		// First apply the old limit in case the new one is too high
 		if (pUser)
 			pNewUser->SetBufferCount(pUser->GetBufferCount(), true);
-		pNewUser->SetBufferCount(WebSock.GetParam("bufsize").ToUInt());
+		pNewUser->SetBufferCount(WebSock.GetParam("bufsize").ToUInt(), spSession->IsAdmin());
 		pNewUser->SetSkinName(WebSock.GetParam("skin"));
 		pNewUser->SetKeepBuffer(WebSock.GetParam("keepbuffer").ToBool());
 		pNewUser->SetMultiClients(WebSock.GetParam("multiclients").ToBool());
@@ -226,10 +263,10 @@ public:
 
 		if (spSession->IsAdmin()) {
 			pNewUser->SetDenyLoadMod(WebSock.GetParam("denyloadmod").ToBool());
-			pNewUser->SetDenySetVHost(WebSock.GetParam("denysetvhost").ToBool());
+			pNewUser->SetDenySetBindHost(WebSock.GetParam("denysetbindhost").ToBool());
 		} else if (pUser) {
 			pNewUser->SetDenyLoadMod(pUser->DenyLoadMod());
-			pNewUser->SetDenySetVHost(pUser->DenySetVHost());
+			pNewUser->SetDenySetBindHost(pUser->DenySetBindHost());
 		}
 
 		// If pUser is not NULL, we are editing an existing user.
@@ -444,7 +481,7 @@ public:
 			return ListUsersPage(WebSock, Tmpl);
 		} else if (sPageName == "traffic" && spSession->IsAdmin()) {
 			return TrafficPage(WebSock, Tmpl);
-		} else if (sPageName.empty() || sPageName == "index") {
+		} else if (sPageName == "index") {
 			return true;
 		}
 
@@ -452,6 +489,7 @@ public:
 	}
 
 	bool ChanPage(CWebSock& WebSock, CTemplate& Tmpl, CUser* pUser, CChan* pChan = NULL) {
+		CSmartPtr<CWebSession> spSession = WebSock.GetSession();
 		Tmpl.SetFile("add_edit_chan.tmpl");
 
 		if (!pUser) {
@@ -469,6 +507,7 @@ public:
 				Tmpl["ChanName"] = pChan->GetName();
 				Tmpl["BufferCount"] = CString(pChan->GetBufferCount());
 				Tmpl["DefModes"] = pChan->GetDefaultModes();
+				Tmpl["Key"] = pChan->GetKey();
 
 				if (pChan->InConfig()) {
 					Tmpl["InConfig"] = "true";
@@ -493,6 +532,16 @@ public:
 			o3["DisplayName"] = "Detached";
 			if (pChan && pChan->IsDetached()) { o3["Checked"] = "true"; }
 
+			FOR_EACH_MODULE(i, pUser) {
+				CTemplate& mod = Tmpl.AddRow("EmbeddedModuleLoop");
+				mod.insert(Tmpl.begin(), Tmpl.end());
+				mod["WebadminAction"] = "display";
+				if ((*i)->OnEmbeddedWebRequest(WebSock, "webadmin/channel", mod)) {
+					mod["Embed"] = WebSock.FindTmpl(*i, "WebadminChan.tmpl");
+					mod["ModName"] = (*i)->GetModName();
+				}
+			}
+
 			return true;
 		}
 
@@ -513,10 +562,11 @@ public:
 			pUser->AddChan(pChan);
 		}
 
-		pChan->SetBufferCount(WebSock.GetParam("buffercount").ToUInt());
+		pChan->SetBufferCount(WebSock.GetParam("buffercount").ToUInt(), spSession->IsAdmin());
 		pChan->SetDefaultModes(WebSock.GetParam("defmodes"));
 		pChan->SetInConfig(WebSock.GetParam("save").ToBool());
 		pChan->SetKeepBuffer(WebSock.GetParam("keepbuffer").ToBool());
+		pChan->SetKey(WebSock.GetParam("key"));
 
 		bool bDetached = WebSock.GetParam("detached").ToBool();
 
@@ -528,6 +578,14 @@ public:
 			}
 		}
 
+		CTemplate TmplMod;
+		TmplMod["User"] = pUser->GetUserName();
+		TmplMod["ChanName"] = sChanName;
+		TmplMod["WebadminAction"] = "change";
+		FOR_EACH_MODULE(it, pUser) {
+			(*it)->OnEmbeddedWebRequest(WebSock, "webadmin/channel", TmplMod);
+		}
+	
 		if (!CZNC::Get().WriteConfig()) {
 			WebSock.PrintErrorPage("Channel added/modified, but config was not written");
 			return true;
@@ -630,27 +688,41 @@ public:
 				Tmpl["IRCConnectEnabled"] = "true";
 			}
 
-			// To change VHosts be admin or don't have DenySetVHost
-			const VCString& vsVHosts = CZNC::Get().GetVHosts();
-			bool bFoundVHost = false;
-			if (spSession->IsAdmin() || !spSession->GetUser()->DenySetVHost()) {
-				for (unsigned int b = 0; b < vsVHosts.size(); b++) {
-					const CString& sVHost = vsVHosts[b];
-					CTemplate& l = Tmpl.AddRow("VHostLoop");
+			// To change BindHosts be admin or don't have DenySetBindHost
+			if (spSession->IsAdmin() || !spSession->GetUser()->DenySetBindHost()) {
+				const VCString& vsBindHosts = CZNC::Get().GetBindHosts();
+				bool bFoundBindHost = false;
+				bool bFoundDCCBindHost = false;
+				for (unsigned int b = 0; b < vsBindHosts.size(); b++) {
+					const CString& sBindHost = vsBindHosts[b];
+					CTemplate& l = Tmpl.AddRow("BindHostLoop");
+					CTemplate& k = Tmpl.AddRow("DCCBindHostLoop");
 
-					l["VHost"] = sVHost;
+					l["BindHost"] = sBindHost;
+					k["BindHost"] = sBindHost;
 
-					if (pUser && pUser->GetVHost() == sVHost) {
+					if (pUser && pUser->GetBindHost() == sBindHost) {
 						l["Checked"] = "true";
-						bFoundVHost = true;
+						bFoundBindHost = true;
+					}
+
+					if (pUser && pUser->GetDCCBindHost() == sBindHost) {
+						k["Checked"] = "true";
+						bFoundDCCBindHost = true;
 					}
 				}
 
-				// If our current vhost is not in the global list...
-				if (pUser && !bFoundVHost && !pUser->GetVHost().empty()) {
-					CTemplate& l = Tmpl.AddRow("VHostLoop");
+				// If our current bindhost is not in the global list...
+				if (pUser && !bFoundBindHost && !pUser->GetBindHost().empty()) {
+					CTemplate& l = Tmpl.AddRow("BindHostLoop");
 
-					l["VHost"] = pUser->GetVHost();
+					l["BindHost"] = pUser->GetBindHost();
+					l["Checked"] = "true";
+				}
+				if (pUser && !bFoundDCCBindHost && !pUser->GetDCCBindHost().empty()) {
+					CTemplate& l = Tmpl.AddRow("DCCBindHostLoop");
+
+					l["BindHost"] = pUser->GetDCCBindHost();
 					l["Checked"] = "true";
 				}
 			}
@@ -733,9 +805,19 @@ public:
 				if (pUser && pUser == CZNC::Get().FindUser(WebSock.GetUser())) { o10["Disabled"] = "true"; }
 
 				CTemplate& o11 = Tmpl.AddRow("OptionLoop");
-				o11["Name"] = "denysetvhost";
-				o11["DisplayName"] = "Deny SetVHost";
-				if (pUser && pUser->DenySetVHost()) { o11["Checked"] = "true"; }
+				o11["Name"] = "denysetbindhost";
+				o11["DisplayName"] = "Deny SetBindHost";
+				if (pUser && pUser->DenySetBindHost()) { o11["Checked"] = "true"; }
+			}
+
+			FOR_EACH_MODULE(i, pUser) {
+				CTemplate& mod = Tmpl.AddRow("EmbeddedModuleLoop");
+				mod.insert(Tmpl.begin(), Tmpl.end());
+				mod["WebadminAction"] = "display";
+				if ((*i)->OnEmbeddedWebRequest(WebSock, "webadmin/user", mod)) {
+					mod["Embed"] = WebSock.FindTmpl(*i, "WebadminUser.tmpl");
+					mod["ModName"] = (*i)->GetModName();
+				}
 			}
 
 			return true;
@@ -755,6 +837,7 @@ public:
 		}
 
 		CString sErr;
+		CString sAction;
 
 		if (!pUser) {
 			// Add User Submission
@@ -764,10 +847,8 @@ public:
 				return true;
 			}
 
-			if (!CZNC::Get().WriteConfig()) {
-				WebSock.PrintErrorPage("User added, but config was not written");
-				return true;
-			}
+			pUser = pNewUser;
+			sAction = "added";
 		} else {
 			// Edit User Submission
 			if (!pUser->Clone(*pNewUser, sErr, false)) {
@@ -777,10 +858,19 @@ public:
 			}
 
 			delete pNewUser;
-			if (!CZNC::Get().WriteConfig()) {
-				WebSock.PrintErrorPage("User edited, but config was not written");
-				return true;
-			}
+			sAction = "edited";
+		}
+
+		CTemplate TmplMod;
+		TmplMod["Username"] = sUsername;
+		TmplMod["WebadminAction"] = "change";
+		FOR_EACH_MODULE(it, pUser) {
+			(*it)->OnEmbeddedWebRequest(WebSock, "webadmin/user", TmplMod);
+		}
+	
+		if (!CZNC::Get().WriteConfig()) {
+			WebSock.PrintErrorPage("User " + sAction + ", but config was not written");
+			return true;
 		}
 
 		if (!spSession->IsAdmin()) {
@@ -876,17 +966,21 @@ public:
 
 	bool SettingsPage(CWebSock& WebSock, CTemplate& Tmpl) {
 		if (!WebSock.GetParam("submitted").ToUInt()) {
-			CString sVHosts, sMotd;
+			CString sBindHosts, sMotd;
 			Tmpl["Action"] = "settings";
 			Tmpl["Title"] = "Settings";
 			Tmpl["StatusPrefix"] = CZNC::Get().GetStatusPrefix();
 			Tmpl["ISpoofFile"] = CZNC::Get().GetISpoofFile();
 			Tmpl["ISpoofFormat"] = CZNC::Get().GetISpoofFormat();
+			Tmpl["MaxBufferSize"] = CString(CZNC::Get().GetMaxBufferSize());
+			Tmpl["ConnectDelay"] = CString(CZNC::Get().GetConnectDelay());
+			Tmpl["ServerThrottle"] = CString(CZNC::Get().GetServerThrottle());
+			Tmpl["AnonIPLimit"] = CString(CZNC::Get().GetAnonIPLimit());
 
-			const VCString& vsVHosts = CZNC::Get().GetVHosts();
-			for (unsigned int a = 0; a < vsVHosts.size(); a++) {
-				CTemplate& l = Tmpl.AddRow("VHostLoop");
-				l["VHost"] = vsVHosts[a];
+			const VCString& vsBindHosts = CZNC::Get().GetBindHosts();
+			for (unsigned int a = 0; a < vsBindHosts.size(); a++) {
+				CTemplate& l = Tmpl.AddRow("BindHostLoop");
+				l["BindHost"] = vsBindHosts[a];
 			}
 
 			const VCString& vsMotd = CZNC::Get().GetMotd();
@@ -970,7 +1064,10 @@ public:
 		sArg = WebSock.GetParam("statusprefix"); CZNC::Get().SetStatusPrefix(sArg);
 		sArg = WebSock.GetParam("ispooffile"); CZNC::Get().SetISpoofFile(sArg);
 		sArg = WebSock.GetParam("ispoofformat"); CZNC::Get().SetISpoofFormat(sArg);
-		//sArg = GetParam(""); if (!sArg.empty()) { CZNC::Get().Set(sArg); }
+		sArg = WebSock.GetParam("maxbufsize"); CZNC::Get().SetMaxBufferSize(sArg.ToUInt());
+		sArg = WebSock.GetParam("connectdelay"); CZNC::Get().SetConnectDelay(sArg.ToUInt());
+		sArg = WebSock.GetParam("serverthrottle"); CZNC::Get().SetServerThrottle(sArg.ToUInt());
+		sArg = WebSock.GetParam("anoniplimit"); CZNC::Get().SetAnonIPLimit(sArg.ToUInt());
 
 		VCString vsArgs;
 		WebSock.GetRawParam("motd").Split("\n", vsArgs);
@@ -981,11 +1078,11 @@ public:
 			CZNC::Get().AddMotd(vsArgs[a].TrimRight_n());
 		}
 
-		WebSock.GetRawParam("vhosts").Split("\n", vsArgs);
-		CZNC::Get().ClearVHosts();
+		WebSock.GetRawParam("bindhosts").Split("\n", vsArgs);
+		CZNC::Get().ClearBindHosts();
 
 		for (a = 0; a < vsArgs.size(); a++) {
-			CZNC::Get().AddVHost(vsArgs[a].Trim_n());
+			CZNC::Get().AddBindHost(vsArgs[a].Trim_n());
 		}
 
 		CZNC::Get().SetSkinName(WebSock.GetParam("skin"));
@@ -1042,9 +1139,6 @@ public:
 		/* we don't want the template to be printed while we redirect */
 		return false;
 	}
-
-private:
-	map<CString, unsigned int>  m_suSwitchCounters;
 };
 
 GLOBALMODULEDEFS(CWebAdminMod, "Web based administration module")

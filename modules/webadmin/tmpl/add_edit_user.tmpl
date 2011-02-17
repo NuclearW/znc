@@ -71,12 +71,23 @@
 				</div>
 				<div style="clear: both;"></div>
 
-			<? IF VHostLoop ?>
+			<? IF BindHostLoop ?>
 				<div class="subsection">
-					<div class="inputlabel">VHost:</div>
-					<select name="vhost">
+					<div class="inputlabel">BindHost:</div>
+					<select name="bindhost">
 						<option value="">- Default -</option>
-						<? LOOP VHostLoop ?><option value="<? VAR VHost ?>"<? IF Checked ?> selected="selected"<? ENDIF ?>><? VAR VHost ?></option><? ENDLOOP ?>
+						<? LOOP BindHostLoop ?><option value="<? VAR BindHost ?>"<? IF Checked ?> selected="selected"<? ENDIF ?>><? VAR BindHost ?></option><? ENDLOOP ?>
+					</select>
+				</div>
+				<div style="clear: both;"></div>
+			<? ENDIF ?>
+
+			<? IF DCCBindHostLoop ?>
+				<div class="subsection">
+					<div class="inputlabel">DCCBindHost:</div>
+					<select name="dccbindhost">
+						<option value="">- Default -</option>
+						<? LOOP DCCBindHostLoop ?><option value="<? VAR BindHost ?>"<? IF Checked ?> selected="selected"<? ENDIF ?>><? VAR BindHost ?></option><? ENDLOOP ?>
 					</select>
 				</div>
 				<div style="clear: both;"></div>
@@ -266,6 +277,15 @@
 			</div>
 		</div>
 	</div>
+
+	<? LOOP EmbeddedModuleLoop ?>
+		<? IF Embed ?>
+		<div class="section">
+			<h3>Module <? VAR ModName ?></h3>
+			<? INC *Embed ?>
+		</div>
+		<? ENDIF ?>
+	<? ENDLOOP ?>
 
 	<div class="submitline">
 		<input type="submit" value="<? IF Edit ?>Save<? ELSE ?>Create<? ENDIF ?>" />

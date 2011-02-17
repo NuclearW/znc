@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -104,7 +104,7 @@ public:
 	virtual CString GetWebMenuTitle() { return "Sticky Chans"; }
 
 	virtual bool OnWebRequest(CWebSock& WebSock, const CString& sPageName, CTemplate& Tmpl) {
-		if (sPageName.empty() || sPageName == "index") {
+		if (sPageName == "index") {
 			bool bSubmitted = (WebSock.GetParam("submitted").ToInt() != 0);
 
 			const vector<CChan*>& Channels = m_pUser->GetChans();
@@ -136,6 +136,27 @@ public:
 			return true;
 		}
 
+		return false;
+	}
+
+	virtual bool OnEmbeddedWebRequest(CWebSock& WebSock, const CString& sPageName, CTemplate& Tmpl) {
+		if (sPageName == "webadmin/channel") {
+			CString sChan = Tmpl["ChanName"];
+			bool bStick = FindNV(sChan) != EndNV();
+			if (Tmpl["WebadminAction"].Equals("display")) {
+				Tmpl["Sticky"] = CString(bStick);
+			} else if (WebSock.GetParam("embed_stickychan_presented").ToBool()) {
+				bool bNewStick = WebSock.GetParam("embed_stickychan_sticky").ToBool();
+				if(bNewStick && !bStick) {
+					SetNV(sChan, ""); // no password support for now unless chansaver is active too
+					WebSock.GetSession()->AddSuccess("Channel become sticky!");
+				} else if(!bNewStick && bStick) {
+					DelNV(sChan);
+					WebSock.GetSession()->AddSuccess("Channel stopped being sticky!");
+				}
+			}
+			return true;
+		}
 		return false;
 	}
 

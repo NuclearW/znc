@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -189,6 +189,7 @@ private:
 			sReason = SIMPLE_AWAY_DEFAULT_REASON;
 
 		time_t iTime = time(NULL);
+		iTime += (time_t)(m_pUser->GetTimezoneOffset() * 60 * 60); // offset is in hours
 		CString sTime = ctime(&iTime);
 		sTime.Trim();
 		sReason.Replace("%s", sTime);

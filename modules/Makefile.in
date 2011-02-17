@@ -1,3 +1,5 @@
+all:
+
 SHELL       := @SHELL@
 
 # Support out-of-tree builds
@@ -15,13 +17,16 @@ sbindir     := @sbindir@
 localstatedir := @localstatedir@
 CXX      := @CXX@
 # CXXFLAGS are for the main binary, so don't use them here, use MODFLAGS instead
-MODFLAGS := @CPPFLAGS@ @MODFLAGS@ -I$(srcdir)/..
+MODFLAGS := @DEFS@ @CPPFLAGS@ @MODFLAGS@ -I$(srcdir)/.. -I..
 MODLINK  := @MODLINK@
 LDFLAGS  := @LDFLAGS@
 # LIBS are not and should not be used in here.
 # The znc binary links already against those.
 # LIBS     := @LIBS@
+PERL_ON  := @PERL@
 PERL     := @PERL_BINARY@
+PYCFG    := @PYTHONCFG_BINARY@
+SWIG     := @SWIG_BINARY@
 MODDIR   := @MODDIR@
 DATADIR  := @DATADIR@
 LIBZNC   := @LIBZNC@
@@ -33,6 +38,9 @@ INSTALL_DATA    := @INSTALL_DATA@
 
 TCL_FLAGS:= @TCL_FLAGS@
 
+ifneq "$(V)" ""
+VERBOSE=1
+endif
 ifeq "$(VERBOSE)" ""
 Q=@
 E=@echo
@@ -45,11 +53,17 @@ ifneq "$(LIBZNC)" ""
 LDFLAGS += -L.. -lznc -Wl,-rpath,$(LIBZNCDIR)
 endif
 
+CLEAN    :=
+
 FILES    := $(notdir $(wildcard $(srcdir)/*.cpp))
 # If extra is enabled
 ifeq "@EXTRA@" "yes"
 FILES    += $(addprefix extra/, $(notdir $(wildcard $(srcdir)/extra/*.cpp)))
 endif
+
+include $(srcdir)/modperl/Makefile.inc
+include $(srcdir)/modpython/Makefile.inc
+include $(srcdir)/modtcl/Makefile.inc
 
 FILES    := $(basename $(FILES))
 
@@ -59,16 +73,6 @@ FILES    := $(foreach file, $(FILES), \
 		, \
 		$(basename $(file)) \
 	))
-endif
-
-ifneq "$(PERL)" ""
-# We execute this now so that we see the 'beauty' of these flags in make's output
-modperlFLAGS := $(shell $(PERL) -MExtUtils::Embed -e perl_inc -e ldopts)
-# Perl API is ugly, casting string literals to char* and redeclaring functions :(
-modperlFLAGS += -Wno-write-strings -Wno-redundant-decls -Wno-missing-declarations
-PERLHOOK     := modperl_install
-else
-FILES    := $(shell echo $(FILES) | sed -e "s/modperl//")
 endif
 
 ifeq "@SASL@" ""
@@ -81,23 +85,15 @@ FILES    := $(shell echo $(FILES) | sed -e "s:extra/charset::")
 endif
 charsetFLAGS := @LIBICONV@
 
-ifeq "$(TCL_FLAGS)" ""
-FILES       := $(shell echo $(FILES) | sed -e "s:extra/modtcl::")
-else
-TCLHOOK     := modtcl_install
-endif
-modtclFLAGS := $(TCL_FLAGS)
-
-
 TARGETS  := $(addsuffix .so, $(FILES))
 
-CLEAN    := *.so extra/*.so
+CLEAN    += *.so extra/*.so
 
-.PHONY: all clean install modperl_install
+.PHONY: all clean install install_metadirs create_install_dir uninstall
 
 all: $(TARGETS)
 
-install: all create_install_dir install_metadirs $(PERLHOOK) $(TCLHOOK)
+install: all create_install_dir install_metadirs
 	$(INSTALL_PROGRAM) $(TARGETS) $(DESTDIR)$(MODDIR)
 
 create_install_dir:
@@ -107,7 +103,7 @@ create_install_dir:
 
 install_metadirs: create_install_dir
 	for a in $(srcdir)/*; do \
-		d=$$(echo $$a | sed -e "s:$(srcdir)/::g"); \
+		d=$$(echo $$a | sed -e "s:$(srcdir)/::g;s:modperl::;s:modpython::"); \
 		if [ -d $$a ] && [ -f $${d}.so ]; then \
 			cp -Rp $$a $(DESTDIR)$(DATADIR); \
 		fi \
@@ -121,15 +117,6 @@ clean:
 	@mkdir -p extra
 	$(E) Building $(if $(filter %extra/,$(dir $<)),extra )module $(notdir $(basename $@))...
 	$(Q)$(CXX) $(MODFLAGS) $(LDFLAGS) $(MODLINK) -o $@ $< $($(notdir $(basename $@))FLAGS) -MMD -MF .depend/$(notdir $@).dep
-
-modperl_install: create_install_dir
-	for i in $(srcdir)/*.pm; do \
-		$(INSTALL_DATA) $$i $(DESTDIR)$(MODDIR); \
-	done
-
-modtcl_install:
-	mkdir -p $(DESTDIR)$(DATADIR)/modtcl/
-	$(INSTALL_DATA) $(srcdir)/extra/modtcl.tcl $(srcdir)/extra/binds.tcl $(DESTDIR)$(DATADIR)/modtcl/
 
 uninstall:
 	# Yes, we are lazy, just remove everything in there

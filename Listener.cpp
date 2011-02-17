@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -49,11 +49,11 @@ bool CRealListener::ConnectionFrom(const CString& sHost, unsigned short uPort) {
 Csock* CRealListener::GetSockObj(const CString& sHost, unsigned short uPort) {
 	CIncomingConnection *pClient = new CIncomingConnection(sHost, uPort, m_pParent->GetAcceptType());
 	if (CZNC::Get().AllowConnectionFrom(sHost)) {
-		GLOBALMODULECALL(OnClientConnect(pClient, sHost, uPort), NULL, NULL, );
+		GLOBALMODULECALL(OnClientConnect(pClient, sHost, uPort), NULL, NULL, NOTHING);
 	} else {
 		pClient->Write(":irc.znc.in 464 unknown-nick :Too many anonymous connections from your IP\r\n");
 		pClient->Close(Csock::CLT_AFTERWRITE);
-		GLOBALMODULECALL(OnFailedLogin("", sHost), NULL, NULL, );
+		GLOBALMODULECALL(OnFailedLogin("", sHost), NULL, NULL, NOTHING);
 	}
 	return pClient;
 }
@@ -74,6 +74,19 @@ CIncomingConnection::CIncomingConnection(const CString& sHostname, unsigned shor
 	SetTimeout(120, 0);
 
 	EnableReadLine();
+}
+
+void CIncomingConnection::ReachedMaxBuffer() {
+	if (GetCloseType() != CLT_DONT)
+		return; // Already closing
+
+	// We don't actually SetMaxBufferThreshold() because that would be
+	// inherited by sockets after SwapSockByAddr().
+	if (GetInternalReadBuffer().length() <= 4096)
+		return;
+
+	// We should never get here with legitimate requests :/
+	Close();
 }
 
 void CIncomingConnection::ReadLine(const CString& sLine) {

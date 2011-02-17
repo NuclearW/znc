@@ -78,6 +78,30 @@
 				</div>
 				<div style="clear: both;"></div>
 
+				<div class="subsection half">
+					<div class="inputlabel">Maximum Buffer Size:</div>
+					<div><input type="text" name="maxbufsize" value="<? VAR MaxBufferSize ?>" /></div>
+				</div>
+				<div style="clear: both;"></div>
+
+				<div class="subsection half">
+					<div class="inputlabel">Connect Delay:</div>
+					<div><input type="text" name="connectdelay" value="<? VAR ConnectDelay ?>" /></div>
+				</div>
+				<div style="clear: both;"></div>
+
+				<div class="subsection half">
+					<div class="inputlabel">Server Throttle:</div>
+					<div><input type="text" name="serverthrottle" value="<? VAR ServerThrottle ?>" /></div>
+				</div>
+				<div style="clear: both;"></div>
+
+				<div class="subsection half">
+					<div class="inputlabel">Anonymous IP Limit:</div>
+					<div><input type="text" name="anoniplimit" value="<? VAR AnonIPLimit ?>" /></div>
+				</div>
+				<div style="clear: both;"></div>
+
 				<div class="subsection twothird">
 					<div class="inputlabel">MOTD:</div>
 					<div><textarea name="motd" cols="70" rows="5" class="monospace"><? LOOP MOTDLoop ?><? VAR Line ?>
@@ -87,8 +111,8 @@
 				</div>
 
 				<div class="subsection twothird">
-					<div class="inputlabel">VHosts:</div>
-					<div><textarea name="vhosts" cols="70" rows="8"><? LOOP VHostLoop ?><? VAR VHost ?>
+					<div class="inputlabel">BindHosts:</div>
+					<div><textarea name="bindhosts" cols="70" rows="8"><? LOOP BindHostLoop ?><? VAR BindHost ?>
 <? ENDLOOP ?>
 </textarea></div>
 					<br /><span class="info">One host name or IP entry per line.</span>

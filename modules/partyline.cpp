@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -184,7 +184,7 @@ public:
 	}
 
 	virtual void OnClientLogin() {
-		if (m_spInjectedPrefixes.find(m_pUser) == m_spInjectedPrefixes.end()) {
+		if (m_spInjectedPrefixes.find(m_pUser) == m_spInjectedPrefixes.end() && !m_pUser->GetChanPrefixes().empty()) {
 			m_pClient->PutClient(":" + GetIRCServer(m_pUser) + " 005 " + m_pUser->GetIRCNick().GetNick() + " CHANTYPES=" + m_pUser->GetChanPrefixes() + CHAN_PREFIX_1 " :are supported by this server.");
 		}
 
@@ -196,7 +196,7 @@ public:
 			if (pChannel->IsInChannel(sNick))
 				continue;
 
-			CString sHost = m_pUser->GetVHost();
+			CString sHost = m_pUser->GetBindHost();
 			const set<CString>& ssNicks = pChannel->GetNicks();
 
 			if (sHost.empty()) {
@@ -319,7 +319,7 @@ public:
 			pChannel->DelFixedNick(pUser->GetUserName());
 
 			const set<CString>& ssNicks = pChannel->GetNicks();
-			CString sHost = pUser->GetVHost();
+			CString sHost = pUser->GetBindHost();
 
 			if (sHost.empty()) {
 				sHost = pUser->GetIRCNick().GetHost();
@@ -377,7 +377,7 @@ public:
 			const CString& sNick = pUser->GetUserName();
 			pChannel->AddNick(sNick);
 
-			CString sHost = pUser->GetVHost();
+			CString sHost = pUser->GetBindHost();
 
 			if (sHost.empty()) {
 				sHost = pUser->GetIRCNick().GetHost();
@@ -408,7 +408,7 @@ public:
 			return CONTINUE;
 		}
 
-		CString sHost = m_pUser->GetVHost();
+		CString sHost = m_pUser->GetBindHost();
 
 		if (sHost.empty()) {
 			sHost = m_pUser->GetIRCNick().GetHost();

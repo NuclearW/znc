@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -9,6 +9,7 @@
 #ifndef _CHAN_H
 #define _CHAN_H
 
+#include "zncconfig.h"
 #include "FileUtils.h"
 #include "Nick.h"
 #include "ZNCString.h"
@@ -65,11 +66,9 @@ public:
 
 	// Modes
 	void SetModes(const CString& s);
-	void ModeChange(const CString& sModes, const CString& sNick = "");
+	void ModeChange(const CString& sModes, const CNick* OpNick = NULL);
 	bool AddMode(unsigned char uMode, const CString& sArg);
 	bool RemMode(unsigned char uMode);
-	void OnOp(const CString& sOpNick, const CString& sNick, bool bOpped);
-	void OnVoice(const CString& sOpNick, const CString& sNick, bool bVoiced);
 	CString GetModeString() const;
 	CString GetModeArg(CString& sArgs) const;
 	CString GetModeForNames() const;
@@ -77,7 +76,8 @@ public:
 
 	// Nicks
 	void ClearNicks();
-	CNick* FindNick(const CString& sNick) const;
+	const CNick* FindNick(const CString& sNick) const;
+	CNick* FindNick(const CString& sNick);
 	int AddNicks(const CString& sNicks);
 	bool AddNick(const CString& sNick);
 	bool RemNick(const CString& sNick);
@@ -129,7 +129,7 @@ public:
 	unsigned int GetTopicDate() const { return m_ulTopicDate; }
 	const CString& GetDefaultModes() const { return m_sDefaultModes; }
 	const vector<CString>& GetBuffer() const { return m_vsBuffer; }
-	const map<CString,CNick*>& GetNicks() const { return m_msNicks; }
+	const map<CString,CNick>& GetNicks() const { return m_msNicks; }
 	unsigned int GetNickCount() const { return m_msNicks.size(); }
 	unsigned int GetBufferCount() const { return m_uBufferCount; }
 	bool KeepBuffer() const { return m_bKeepBuffer; }
@@ -156,7 +156,7 @@ protected:
 	CNick                        m_Nick;
 	unsigned int                 m_uJoinTries;
 	CString                      m_sDefaultModes;
-	map<CString,CNick*>          m_msNicks;       // Todo: make this caseless (irc style)
+	map<CString,CNick>           m_msNicks;       // Todo: make this caseless (irc style)
 	unsigned int                 m_uBufferCount;
 	vector<CString>              m_vsBuffer;
 

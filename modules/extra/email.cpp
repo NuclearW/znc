@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -48,6 +48,12 @@ public:
 	virtual ~CEmail() {}
 
 	virtual bool OnLoad(const CString & sArgs, CString& sMessage) {
+#ifndef MOD_EMAIL_ALLOW_EVERYONE
+		if (!m_pUser->IsAdmin()) {
+			sMessage = "You must be admin to use the email module";
+			return false;
+		}
+#endif
 		m_sMailPath = sArgs;
 
 		StartParser();

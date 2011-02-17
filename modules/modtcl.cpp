@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -93,7 +93,8 @@ public:
 		Tcl_CreateCommand(interp, "GetCurNick", tcl_GetCurNick, this, NULL);
 		Tcl_CreateCommand(interp, "GetUsername", tcl_GetUsername, this, NULL);
 		Tcl_CreateCommand(interp, "GetRealName", tcl_GetRealName, this, NULL);
-		Tcl_CreateCommand(interp, "GetVHost", tcl_GetVHost, this, NULL);
+		Tcl_CreateCommand(interp, "GetVHost", tcl_GetBindHost, this, NULL);
+		Tcl_CreateCommand(interp, "GetBindHost", tcl_GetBindHost, this, NULL);
 		Tcl_CreateCommand(interp, "GetChans", tcl_GetChans, this, NULL);
 		Tcl_CreateCommand(interp, "GetChannelUsers", tcl_GetChannelUsers, this, NULL);
 		Tcl_CreateCommand(interp, "GetChannelModes", tcl_GetChannelModes, this, NULL);
@@ -260,9 +261,9 @@ private:
 		return TCL_OK;
 	}
 
-	static int tcl_GetVHost STDVAR {
+	static int tcl_GetBindHost STDVAR {
 		CModTcl *mod = static_cast<CModTcl *>(cd);
-		Tcl_SetResult(irp, (char *)mod->m_pUser->GetVHost().c_str(), TCL_VOLATILE);
+		Tcl_SetResult(irp, (char *)mod->m_pUser->GetBindHost().c_str(), TCL_VOLATILE);
 		return TCL_OK;
 	}
 
@@ -301,9 +302,9 @@ private:
 			return TCL_ERROR;
 		}
 
-		const map<CString,CNick*>& msNicks = pChannel->GetNicks();
-		for (map<CString,CNick*>::const_iterator it = msNicks.begin(); it != msNicks.end(); ++it) {
-			const CNick& Nick = *it->second;
+		const map<CString,CNick>& msNicks = pChannel->GetNicks();
+		for (map<CString,CNick>::const_iterator it = msNicks.begin(); it != msNicks.end(); ++it) {
+			const CNick& Nick = it->second;
 			l[0] = (Nick.GetNick()).c_str();
 			l[1] = (Nick.GetIdent()).c_str();
 			l[2] = (Nick.GetHost()).c_str();
@@ -493,4 +494,4 @@ void CModTclStartTimer::RunJob() {
 		p->Start();
 }
 
-MODULEDEFS(CModTcl, "Loads Tcl scripts as ZNC modules");
+MODULEDEFS(CModTcl, "Loads Tcl scripts as ZNC modules")

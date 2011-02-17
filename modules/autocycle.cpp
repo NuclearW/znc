@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -101,7 +101,7 @@ public:
 		}
 	}
 
-	virtual void OnPart(const CNick& Nick, CChan& Channel) {
+	virtual void OnPart(const CNick& Nick, CChan& Channel, const CString& sMessage) {
 		AutoCycle(Channel);
 	}
 
@@ -124,8 +124,8 @@ protected:
 			return;
 
 		// Is that person us and we don't have op?
-		const CNick* pNick = Channel.GetNicks().begin()->second;
-		if (!pNick->HasPerm(CChan::Op) && pNick->GetNick().Equals(m_pUser->GetCurNick()))
+		const CNick& pNick = Channel.GetNicks().begin()->second;
+		if (!pNick.HasPerm(CChan::Op) && pNick.GetNick().Equals(m_pUser->GetCurNick()))
 			Channel.Cycle();
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -147,7 +147,7 @@ void CModule::SetClient(CClient* pClient) { m_pClient = pClient; }
 
 bool CModule::LoadRegistry() {
 	//CString sPrefix = (m_pUser) ? m_pUser->GetUserName() : ".global";
-	return (m_mssRegistry.ReadFromDisk(GetSavePath() + "/.registry", 0600) == MCString::MCS_SUCCESS);
+	return (m_mssRegistry.ReadFromDisk(GetSavePath() + "/.registry") == MCString::MCS_SUCCESS);
 }
 
 bool CModule::SaveRegistry() const {
@@ -387,6 +387,7 @@ CString CModule::GetModNick() const { return ((m_pUser) ? m_pUser->GetStatusPref
 // Webmods
 bool CModule::OnWebPreRequest(CWebSock& WebSock, const CString& sPageName) { return false; }
 bool CModule::OnWebRequest(CWebSock& WebSock, const CString& sPageName, CTemplate& Tmpl) { return false; }
+bool CModule::OnEmbeddedWebRequest(CWebSock& WebSock, const CString& sPageName, CTemplate& Tmpl) { return false; }
 // !Webmods
 
 bool CModule::OnLoad(const CString& sArgs, CString& sMessage) { sMessage = ""; return true; }
@@ -423,7 +424,7 @@ void CModule::OnQuit(const CNick& Nick, const CString& sMessage, const vector<CC
 void CModule::OnNick(const CNick& Nick, const CString& sNewNick, const vector<CChan*>& vChans) {}
 void CModule::OnKick(const CNick& Nick, const CString& sKickedNick, CChan& Channel, const CString& sMessage) {}
 void CModule::OnJoin(const CNick& Nick, CChan& Channel) {}
-void CModule::OnPart(const CNick& Nick, CChan& Channel) {}
+void CModule::OnPart(const CNick& Nick, CChan& Channel, const CString& sMessage) {}
 
 CModule::EModRet CModule::OnChanBufferStarting(CChan& Chan, CClient& Client) { return CONTINUE; }
 CModule::EModRet CModule::OnChanBufferEnding(CChan& Chan, CClient& Client) { return CONTINUE; }
@@ -507,6 +508,14 @@ CModule::EModRet CGlobalModule::OnUnknownUserRaw(CString& sLine) { return CONTIN
 void CGlobalModule::OnClientCapLs(SCString& ssCaps) {}
 bool CGlobalModule::IsClientCapSupported(const CString& sCap, bool bState) { return false; }
 void CGlobalModule::OnClientCapRequest(const CString& sCap, bool bState) {}
+CModule::EModRet CGlobalModule::OnModuleLoading(const CString& sModName, const CString& sArgs,
+		bool& bSuccess, CString& sRetMsg) { return CONTINUE; }
+CModule::EModRet CGlobalModule::OnModuleUnloading(CModule* pModule, bool& bSuccess, CString& sRetMsg) {
+	return CONTINUE;
+}
+CModule::EModRet CGlobalModule::OnGetModInfo(CModInfo& ModInfo, const CString& sModule,
+		bool& bSuccess, CString& sRetMsg) { return CONTINUE; }
+void CGlobalModule::OnGetAvailableMods(set<CModInfo>& ssMods, bool bGlobal) {}
 
 
 CModules::CModules() {
@@ -579,7 +588,7 @@ bool CModules::OnQuit(const CNick& Nick, const CString& sMessage, const vector<C
 bool CModules::OnNick(const CNick& Nick, const CString& sNewNick, const vector<CChan*>& vChans) { MODUNLOADCHK(OnNick(Nick, sNewNick, vChans)); return false; }
 bool CModules::OnKick(const CNick& Nick, const CString& sKickedNick, CChan& Channel, const CString& sMessage) { MODUNLOADCHK(OnKick(Nick, sKickedNick, Channel, sMessage)); return false; }
 bool CModules::OnJoin(const CNick& Nick, CChan& Channel) { MODUNLOADCHK(OnJoin(Nick, Channel)); return false; }
-bool CModules::OnPart(const CNick& Nick, CChan& Channel) { MODUNLOADCHK(OnPart(Nick, Channel)); return false; }
+bool CModules::OnPart(const CNick& Nick, CChan& Channel, const CString& sMessage) { MODUNLOADCHK(OnPart(Nick, Channel, sMessage)); return false; }
 bool CModules::OnChanBufferStarting(CChan& Chan, CClient& Client) { MODHALTCHK(OnChanBufferStarting(Chan, Client)); }
 bool CModules::OnChanBufferEnding(CChan& Chan, CClient& Client) { MODHALTCHK(OnChanBufferEnding(Chan, Client)); }
 bool CModules::OnChanBufferPlayLine(CChan& Chan, CClient& Client, CString& sLine) { MODHALTCHK(OnChanBufferPlayLine(Chan, Client, sLine)); }
@@ -699,6 +708,25 @@ bool CGlobalModules::OnClientCapRequest(const CString& sCap, bool bState) {
 	return false;
 }
 
+bool CGlobalModules::OnModuleLoading(const CString& sModName, const CString& sArgs,
+		bool& bSuccess, CString& sRetMsg) {
+	GLOBALMODHALTCHK(OnModuleLoading(sModName, sArgs, bSuccess, sRetMsg));
+}
+
+bool CGlobalModules::OnModuleUnloading(CModule* pModule, bool& bSuccess, CString& sRetMsg) {
+	GLOBALMODHALTCHK(OnModuleUnloading(pModule, bSuccess, sRetMsg));
+}
+
+bool CGlobalModules::OnGetModInfo(CModInfo& ModInfo, const CString& sModule,
+		bool& bSuccess, CString& sRetMsg) {
+	GLOBALMODHALTCHK(OnGetModInfo(ModInfo, sModule, bSuccess, sRetMsg));
+}
+
+bool CGlobalModules::OnGetAvailableMods(set<CModInfo>& ssMods, bool bGlobal) {
+	GLOBALMODCALL(OnGetAvailableMods(ssMods, bGlobal));
+	return false;
+}
+
 
 CModule* CModules::FindModule(const CString& sModule) const {
 	for (unsigned int a = 0; a < size(); a++) {
@@ -717,6 +745,9 @@ bool CModules::LoadModule(const CString& sModule, const CString& sArgs, CUser* p
 		sRetMsg = "Module [" + sModule + "] already loaded.";
 		return false;
 	}
+
+	bool bSuccess;
+	GLOBALMODULECALL(OnModuleLoading(sModule, sArgs, bSuccess, sRetMsg), pUser, NULL, return bSuccess);
 
 	CString sModPath, sDataPath;
 	CString sDesc;
@@ -821,6 +852,9 @@ bool CModules::UnloadModule(const CString& sModule, CString& sRetMsg) {
 		return false;
 	}
 
+	bool bSuccess;
+	GLOBALMODULECALL(OnModuleUnloading(pModule, bSuccess, sRetMsg), pModule->GetUser(), NULL, return bSuccess);
+
 	ModHandle p = pModule->GetDLL();
 
 	if (p) {
@@ -868,6 +902,9 @@ bool CModules::ReloadModule(const CString& sModule, const CString& sArgs, CUser*
 
 bool CModules::GetModInfo(CModInfo& ModInfo, const CString& sModule, CString& sRetMsg) {
 	CString sModPath, sTmp;
+
+	bool bSuccess;
+	GLOBALMODULECALL(OnGetModInfo(ModInfo, sModule, bSuccess, sRetMsg), NULL, NULL, return bSuccess);
 
 	if (!FindModPath(sModule, sModPath, sTmp)) {
 		sRetMsg = "Unable to find module [" + sModule + "]";
@@ -928,6 +965,8 @@ void CModules::GetAvailableMods(set<CModInfo>& ssMods, bool bGlobal) {
 			}
 		}
 	}
+
+	GLOBALMODULECALL(OnGetAvailableMods(ssMods, bGlobal), NULL, NULL, NOTHING);
 }
 
 bool CModules::FindModPath(const CString& sModule, CString& sModPath,
@@ -1035,7 +1074,7 @@ ModHandle CModules::OpenModule(const CString& sModule, const CString& sModPath, 
 	if (!GetDesc) {
 		dlclose(p);
 		sRetMsg = "Could not find ZNCModDescription() in module [" + sModule + "]";
-		return false;
+		return NULL;
 	}
 
 	if (CModule::GetCoreVersion() != Version()) {

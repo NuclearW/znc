@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -9,6 +9,7 @@
 #ifndef _LISTENER_H
 #define _LISTENER_H
 
+#include "zncconfig.h"
 #include "znc.h"
 
 // Forward Declarations
@@ -78,6 +79,7 @@ public:
 	CIncomingConnection(const CString& sHostname, unsigned short uPort, CListener::EAcceptType eAcceptType);
 	virtual ~CIncomingConnection() {}
 	virtual void ReadLine(const CString& sData);
+	virtual void ReachedMaxBuffer();
 
 private:
 	CListener::EAcceptType m_eAcceptType;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -13,6 +13,10 @@
 #include "User.h"
 #include "znc.h"
 
+// These are used in OnGeneralCTCP()
+const time_t CIRCSock::m_uCTCPFloodTime = 5;
+const unsigned int CIRCSock::m_uCTCPFloodCount = 5;
+
 CIRCSock::CIRCSock(CUser* pUser) : CZNCSock() {
 	m_pUser = pUser;
 	m_bISpoofReleased = false;
@@ -21,9 +25,12 @@ CIRCSock::CIRCSock(CUser* pUser) : CZNCSock() {
 	m_bUHNames = false;
 	EnableReadLine();
 	m_Nick.SetIdent(pUser->GetIdent());
-	m_Nick.SetHost(pUser->GetVHost());
+	m_Nick.SetHost(pUser->GetBindHost());
 
 	m_uMaxNickLen = 9;
+	m_uCapPaused = 0;
+	m_lastCTCP = 0;
+	m_uNumCTCP = 0;
 	m_sPerms = "*!@%+";
 	m_sPermModes = "qaohv";
 	m_mueChanModes['b'] = ListArg;
@@ -36,6 +43,8 @@ CIRCSock::CIRCSock(CUser* pUser) : CZNCSock() {
 	m_mueChanModes['t'] = NoArg;
 	m_mueChanModes['i'] = NoArg;
 	m_mueChanModes['n'] = NoArg;
+
+	pUser->SetIRCSocket(this);
 
 	// RFC says a line can have 512 chars max, but we don't care ;)
 	SetMaxBufferThreshold(1024);
@@ -64,6 +73,10 @@ CIRCSock::~CIRCSock() {
 }
 
 void CIRCSock::Quit(const CString& sQuitMsg) {
+	if (!m_bAuthed) {
+		Close(CLT_NOW);
+		return;
+	}
 	CString sMsg = (!sQuitMsg.empty()) ? sQuitMsg : m_pUser->GetQuitMsg();
 	PutIRC("QUIT :" + sMsg);
 	Close(CLT_AFTERWRITE);
@@ -136,7 +149,7 @@ void CIRCSock::ReadLine(const CString& sData) {
 
 				SetNick(sNick);
 
-				MODULECALL(OnIRCConnected(), m_pUser, NULL, );
+				MODULECALL(OnIRCConnected(), m_pUser, NULL, NOTHING);
 
 				m_pUser->ClearRawBuffer();
 				m_pUser->AddRawBuffer(":" + sServer + " " + sCmd + " ", " " + sRest);
@@ -374,7 +387,7 @@ void CIRCSock::ReadLine(const CString& sData) {
 				SetNick(sNewNick);
 			}
 
-			MODULECALL(OnNick(Nick, sNewNick, vFoundChans), m_pUser, NULL, );
+			MODULECALL(OnNick(Nick, sNewNick, vFoundChans), m_pUser, NULL, NOTHING);
 
 			if (!bIsVisible) {
 				return;
@@ -412,7 +425,7 @@ void CIRCSock::ReadLine(const CString& sData) {
 				}
 			}
 
-			MODULECALL(OnQuit(Nick, sMessage, vFoundChans), m_pUser, NULL, );
+			MODULECALL(OnQuit(Nick, sMessage, vFoundChans), m_pUser, NULL, NOTHING);
 
 			if (!bIsVisible) {
 				return;
@@ -442,7 +455,7 @@ void CIRCSock::ReadLine(const CString& sData) {
 
 			if (pChan) {
 				pChan->AddNick(Nick.GetNickMask());
-				MODULECALL(OnJoin(Nick.GetNickMask(), *pChan), m_pUser, NULL, );
+				MODULECALL(OnJoin(Nick.GetNickMask(), *pChan), m_pUser, NULL, NOTHING);
 
 				if (pChan->IsDetached()) {
 					return;
@@ -453,12 +466,13 @@ void CIRCSock::ReadLine(const CString& sData) {
 			if (sChan.Left(1) == ":") {
 				sChan.LeftChomp();
 			}
+			CString sMsg = sRest.Token(1, true).TrimPrefix_n(":");
 
 			CChan* pChan = m_pUser->FindChan(sChan);
 			bool bDetached = false;
 			if (pChan) {
 				pChan->RemNick(Nick.GetNick());
-				MODULECALL(OnPart(Nick.GetNickMask(), *pChan), m_pUser, NULL, );
+				MODULECALL(OnPart(Nick.GetNickMask(), *pChan, sMsg), m_pUser, NULL, NOTHING);
 
 				if (pChan->IsDetached())
 					bDetached = true;
@@ -486,7 +500,7 @@ void CIRCSock::ReadLine(const CString& sData) {
 
 			CChan* pChan = m_pUser->FindChan(sTarget);
 			if (pChan) {
-				pChan->ModeChange(sModes, Nick.GetNick());
+				pChan->ModeChange(sModes, &Nick);
 
 				if (pChan->IsDetached()) {
 					return;
@@ -523,7 +537,7 @@ void CIRCSock::ReadLine(const CString& sData) {
 			CChan* pChan = m_pUser->FindChan(sChan);
 
 			if (pChan) {
-				MODULECALL(OnKick(Nick, sKickedNick, *pChan, sMsg), m_pUser, NULL, );
+				MODULECALL(OnKick(Nick, sKickedNick, *pChan, sMsg), m_pUser, NULL, NOTHING);
 				// do not remove the nick till after the OnKick call, so modules
 				// can do Chan.FindNick or something to get more info.
 				pChan->RemNick(sKickedNick);
@@ -679,16 +693,12 @@ void CIRCSock::ReadLine(const CString& sData) {
 
 					for (it = vsTokens.begin(); it != vsTokens.end(); ++it) {
 						if (OnServerCapAvailable(*it) || *it == "multi-prefix" || *it == "userhost-in-names") {
-							// For real support of ack (~) modifier need also
-							// to queue these cap requests.
-							PutIRC("CAP REQ :" + *it);
 							m_ssPendingCaps.insert(*it);
 						}
 					}
 				} else if (sSubCmd == "ACK") {
 					sArgs.Trim();
-					m_ssPendingCaps.erase(sArgs);
-					MODULECALL(OnServerCapResult(sArgs, true), m_pUser, NULL, );
+					MODULECALL(OnServerCapResult(sArgs, true), m_pUser, NULL, NOTHING);
 					if ("multi-prefix" == sArgs) {
 						m_bNamesx = true;
 					} else if ("userhost-in-names" == sArgs) {
@@ -699,14 +709,10 @@ void CIRCSock::ReadLine(const CString& sData) {
 					// This should work because there's no [known]
 					// capability with length of name more than 100 characters.
 					sArgs.Trim();
-					m_ssPendingCaps.erase(sArgs);
-					MODULECALL(OnServerCapResult(sArgs, false), m_pUser, NULL, );
+					MODULECALL(OnServerCapResult(sArgs, false), m_pUser, NULL, NOTHING);
 				}
-
-				if (m_ssPendingCaps.empty()) {
-					// We already got all needed ACK/NAK replies.
-					PutIRC("CAP END");
-				}
+				
+				SendNextCap();
 			}
 			// Don't forward any CAP stuff to the client
 			return;
@@ -714,6 +720,28 @@ void CIRCSock::ReadLine(const CString& sData) {
 	}
 
 	m_pUser->PutUser(sLine);
+}
+
+void CIRCSock::SendNextCap() {
+	if (!m_uCapPaused) {
+		if (m_ssPendingCaps.empty()) {
+			// We already got all needed ACK/NAK replies.
+			PutIRC("CAP END");
+		} else {
+			CString sCap = *m_ssPendingCaps.begin();
+			m_ssPendingCaps.erase(m_ssPendingCaps.begin());
+			PutIRC("CAP REQ :" + sCap);
+		}
+	}
+}
+
+void CIRCSock::PauseCap() {
+	++m_uCapPaused;
+}
+
+void CIRCSock::ResumeCap() {
+	--m_uCapPaused;
+	SendNextCap();
 }
 
 bool CIRCSock::OnServerCapAvailable(const CString& sCap) {
@@ -817,6 +845,18 @@ bool CIRCSock::OnGeneralCTCP(CNick& Nick, CString& sMessage) {
 	}
 
 	if (!sReply.empty()) {
+		time_t now = time(NULL);
+		// If the last CTCP is older than m_uCTCPFloodTime, reset the counter
+		if (m_lastCTCP + m_uCTCPFloodTime < now)
+			m_uNumCTCP = 0;
+		m_lastCTCP = now;
+		// If we are over the limit, don't reply to this CTCP
+		if (m_uNumCTCP >= m_uCTCPFloodCount) {
+			DEBUG("CTCP flood detected - not replying to query");
+			return false;
+		}
+		m_uNumCTCP++;
+
 		PutIRC("NOTICE " + Nick.GetNick() + " :\001" + sQuery + " " + sReply + "\001");
 		return true;
 	}
@@ -905,7 +945,6 @@ void CIRCSock::SetNick(const CString& sNick) {
 
 void CIRCSock::Connected() {
 	DEBUG(GetSockName() << " == Connected()");
-	m_pUser->IRCConnected(this);
 
 	CString sPass = m_sPass;
 	CString sNick = m_pUser->GetNick();
@@ -928,7 +967,7 @@ void CIRCSock::Connected() {
 }
 
 void CIRCSock::Disconnected() {
-	MODULECALL(OnIRCDisconnected(), m_pUser, NULL, );
+	MODULECALL(OnIRCDisconnected(), m_pUser, NULL, NOTHING);
 
 	DEBUG(GetSockName() << " == Disconnected()");
 	if (!m_pUser->IsBeingDeleted() && m_pUser->GetIRCConnectEnabled() &&
@@ -959,7 +998,7 @@ void CIRCSock::SockError(int iErrno) {
 	CString sError;
 
 	if (iErrno == EDOM) {
-		sError = "Your VHost could not be resolved";
+		sError = "Your bind host could not be resolved";
 	} else if (iErrno == EADDRNOTAVAIL) {
 		// Csocket uses this if it can't resolve the dest host name
 		// ...but it also does generate this if bind() fails -.-
@@ -967,7 +1006,7 @@ void CIRCSock::SockError(int iErrno) {
 		if (GetBindHost().empty())
 			sError += " (Is your IRC server's host name valid?)";
 		else
-			sError += " (Is your IRC server's host name and vhost valid?)";
+			sError += " (Is your IRC server's host name and ZNC bind host valid?)";
 	} else {
 		sError = strerror(iErrno);
 	}

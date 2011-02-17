@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -46,7 +46,8 @@ public:
 	virtual void OnMode(const CNick& OpNick, CChan& Channel, char uMode, const CString& sArg, bool bAdded, bool bNoChange) {
 		// This is called when we join (ZNC requests the channel modes
 		// on join) *and* when someone changes the channel keys.
-		if (uMode != 'k' || bNoChange || !bAdded)
+		// We ignore channel key "*" because of some broken nets.
+		if (uMode != 'k' || bNoChange || !bAdded || sArg == "*")
 			return;
 
 		Channel.SetKey(sArg);
@@ -60,7 +61,7 @@ public:
 		}
 	}
 
-	virtual void OnPart(const CNick& Nick, CChan& Channel) {
+	virtual void OnPart(const CNick& Nick, CChan& Channel, const CString& sMessage) {
 		if (Nick.GetNick() == m_pUser->GetIRCNick().GetNick()) {
 			Channel.SetInConfig(false);
 			CZNC::Get().WriteConfig();

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -9,6 +9,7 @@
 #ifndef _USER_H
 #define _USER_H
 
+#include "zncconfig.h"
 #include "Buffer.h"
 #include "FileUtils.h"
 #include "Modules.h"
@@ -53,13 +54,13 @@ public:
 	bool AddChan(const CString& sName, bool bInConfig);
 	bool DelChan(const CString& sName);
 	void JoinChans();
-	bool JoinChan(CChan* pChan);
 	CServer* FindServer(const CString& sName) const;
 	bool DelServer(const CString& sName, unsigned short uPort, const CString& sPass);
 	bool AddServer(const CString& sName);
 	bool AddServer(const CString& sName, unsigned short uPort, const CString& sPass = "", bool bSSL = false);
 	CServer* GetNextServer();
 	CServer* GetCurrentServer() const;
+	bool SetNextServer(const CServer* pServer);
 	bool CheckPass(const CString& sPass) const;
 	bool AddAllowedHost(const CString& sHostMask);
 	bool IsHostAllowed(const CString& sHostMask) const;
@@ -67,7 +68,6 @@ public:
 	static bool IsValidUserName(const CString& sUserName);
 	static CString MakeCleanUserName(const CString& sUserName);
 	bool IsLastServer() const;
-	bool ConnectPaused();
 
 	void DelClients();
 	void DelServers();
@@ -108,8 +108,8 @@ public:
 
 	CString GetLocalIP();
 	CString GetLocalDCCIP();
-	bool IsIRCConnected() const { return GetIRCSock() != NULL; }
-	void IRCConnected(CIRCSock* pIRCSock);
+	bool IsIRCConnected() const;
+	void SetIRCSocket(CIRCSock* pIRCSock);
 	void IRCDisconnected();
 	void CheckIRCConnect();
 
@@ -140,15 +140,15 @@ public:
 	void SetAltNick(const CString& s);
 	void SetIdent(const CString& s);
 	void SetRealName(const CString& s);
-	void SetVHost(const CString& s);
-	void SetDCCVHost(const CString& s);
+	void SetBindHost(const CString& s);
+	void SetDCCBindHost(const CString& s);
 	void SetPass(const CString& s, eHashType eHash, const CString& sSalt = "");
 	void SetBounceDCCs(bool b);
 	void SetMultiClients(bool b);
 	void SetUseClientIP(bool b);
 	void SetDenyLoadMod(bool b);
 	void SetAdmin(bool b);
-	void SetDenySetVHost(bool b);
+	void SetDenySetBindHost(bool b);
 	bool SetStatusPrefix(const CString& s);
 	void SetDefaultChanModes(const CString& s);
 	void SetIRCNick(const CNick& n);
@@ -180,8 +180,8 @@ public:
 	const CString& GetAltNick(bool bAllowDefault = true) const;
 	const CString& GetIdent(bool bAllowDefault = true) const;
 	const CString& GetRealName() const;
-	const CString& GetVHost() const;
-	const CString& GetDCCVHost() const;
+	const CString& GetBindHost() const;
+	const CString& GetDCCBindHost() const;
 	const CString& GetPass() const;
 	eHashType GetPassHashType() const;
 	const CString& GetPassSalt() const;
@@ -200,7 +200,7 @@ public:
 	bool UseClientIP() const;
 	bool DenyLoadMod() const;
 	bool IsAdmin() const;
-	bool DenySetVHost() const;
+	bool DenySetBindHost() const;
 	bool BounceDCCs() const;
 	bool MultiClients() const;
 	const CString& GetStatusPrefix() const;
@@ -224,16 +224,18 @@ public:
 	CString GetSkinName() const;
 	// !Getters
 private:
+	bool JoinChan(CChan* pChan);
+	void JoinChans(set<CChan*>& sChans);
+
 protected:
-	time_t                m_uConnectTime;
 	CString               m_sUserName;
 	CString               m_sCleanUserName;
 	CString               m_sNick;
 	CString               m_sAltNick;
 	CString               m_sIdent;
 	CString               m_sRealName;
-	CString               m_sVHost;
-	CString               m_sDCCVHost;
+	CString               m_sBindHost;
+	CString               m_sDCCBindHost;
 	CString               m_sPass;
 	CString               m_sPassSalt;
 	CString               m_sStatusPrefix;
@@ -261,7 +263,7 @@ protected:
 	bool                  m_bUseClientIP;
 	bool                  m_bDenyLoadMod;
 	bool                  m_bAdmin;
-	bool                  m_bDenySetVHost;
+	bool                  m_bDenySetBindHost;
 	bool                  m_bKeepBuffer;
 	bool                  m_bBeingDeleted;
 	bool                  m_bAppendTimestamp;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -51,7 +51,7 @@ void CClient::UserCommand(CString& sLine) {
 			return;
 		}
 
-		const map<CString,CNick*>& msNicks = pChan->GetNicks();
+		const map<CString,CNick>& msNicks = pChan->GetNicks();
 		CIRCSock* pIRCSock = m_pUser->GetIRCSock();
 		const CString& sPerms = (pIRCSock) ? pIRCSock->GetPerms() : "";
 
@@ -72,20 +72,20 @@ void CClient::UserCommand(CString& sLine) {
 		Table.AddColumn("Ident");
 		Table.AddColumn("Host");
 
-		for (map<CString,CNick*>::const_iterator a = msNicks.begin(); a != msNicks.end(); ++a) {
+		for (map<CString,CNick>::const_iterator a = msNicks.begin(); a != msNicks.end(); ++a) {
 			Table.AddRow();
 
 			for (unsigned int b = 0; b < sPerms.size(); b++) {
-				if (a->second->HasPerm(sPerms[b])) {
+				if (a->second.HasPerm(sPerms[b])) {
 					CString sPerm;
 					sPerm += sPerms[b];
 					Table.SetCell(sPerm, sPerm);
 				}
 			}
 
-			Table.SetCell("Nick", a->second->GetNick());
-			Table.SetCell("Ident", a->second->GetIdent());
-			Table.SetCell("Host", a->second->GetHost());
+			Table.SetCell("Nick", a->second.GetNick());
+			Table.SetCell("Ident", a->second.GetIdent());
+			Table.SetCell("Host", a->second.GetHost());
 		}
 
 		PutStatus(Table);
@@ -97,16 +97,43 @@ void CClient::UserCommand(CString& sLine) {
 			return;
 		}
 
-		CChan* pChan = m_pUser->FindChan(sChan);
-		if (!pChan) {
-			PutStatus("You are not on [" + sChan + "]");
-			return;
+		const vector<CChan*>& vChans = m_pUser->GetChans();
+		vector<CChan*>::const_iterator it;
+		unsigned int uMatches = 0, uDetached = 0;
+		for (it = vChans.begin(); it != vChans.end(); ++it) {
+			if (!(*it)->GetName().WildCmp(sChan))
+				continue;
+			uMatches++;
+
+			if ((*it)->IsDetached())
+				continue;
+			uDetached++;
+			(*it)->DetachUser();
 		}
 
-		PutStatus("Detaching you from [" + sChan + "]");
-		pChan->DetachUser();
+		PutStatus("There were [" + CString(uMatches) + "] channels matching [" + sChan + "]");
+		PutStatus("Detached [" + CString(uDetached) + "] channels");
 	} else if (sCommand.Equals("VERSION")) {
+		const char *features = "IPv6: "
+#ifdef HAVE_IPV6
+			"yes"
+#else
+			"no"
+#endif
+			", SSL: "
+#ifdef HAVE_LIBSSL
+			"yes"
+#else
+			"no"
+#endif
+			", c-ares: "
+#ifdef HAVE_C_ARES
+			"yes";
+#else
+			"no";
+#endif
 		PutStatus(CZNC::GetTag());
+		PutStatus(features);
 	} else if (sCommand.Equals("MOTD") || sCommand.Equals("ShowMOTD")) {
 		if (!SendMotd()) {
 			PutStatus("There is no MOTD set.");
@@ -234,30 +261,45 @@ void CClient::UserCommand(CString& sLine) {
 			return;
 		}
 
+		CString sArgs = sLine.Token(1, true);
+		CServer *pServer = NULL;
+
+		if (!sArgs.empty()) {
+			pServer = m_pUser->FindServer(sArgs);
+			if (!pServer) {
+				PutStatus("Server [" + sArgs + "] not found");
+				return;
+			}
+			m_pUser->SetNextServer(pServer);
+
+			// If we are already connecting to some server,
+			// we have to abort that attempt
+			Csock *pIRCSock = GetIRCSock();
+			if (pIRCSock && !pIRCSock->IsConnected()) {
+				pIRCSock->Close();
+			}
+		}
+
 		if (GetIRCSock()) {
 			GetIRCSock()->Quit();
-			PutStatus("Jumping to the next server in the list...");
+			if (pServer)
+				PutStatus("Connecting to [" + pServer->GetName() + "]...");
+			else
+				PutStatus("Jumping to the next server in the list...");
 		} else {
-			PutStatus("Connecting...");
+			if (pServer)
+				PutStatus("Connecting to [" + pServer->GetName() + "]...");
+			else
+				PutStatus("Connecting...");
 		}
 
 		m_pUser->SetIRCConnectEnabled(true);
 		m_pUser->CheckIRCConnect();
 		return;
 	} else if (sCommand.Equals("DISCONNECT")) {
-		// GetIRCSock() is only set after the low level connection
-		// to the IRC server was established. Before this we can
-		// only find the IRC socket by its name.
 		if (GetIRCSock()) {
 			CString sQuitMsg = sLine.Token(1, true);
 			GetIRCSock()->Quit(sQuitMsg);
-		} else {
-			Csock* pIRCSock;
-			CString sSockName = "IRC::" + m_pUser->GetUserName();
-			// This is *slow*, we try to avoid doing this
-			pIRCSock = CZNC::Get().GetManager().FindSockByName(sSockName);
-			if (pIRCSock)
-				pIRCSock->Close();
 		}
 
 		m_pUser->SetIRCConnectEnabled(false);
@@ -269,14 +311,22 @@ void CClient::UserCommand(CString& sLine) {
 		if (sChan.empty()) {
 			PutStatus("Usage: EnableChan <channel>");
 		} else {
-			CChan* pChan = m_pUser->FindChan(sChan);
-			if (!pChan) {
-				PutStatus("Channel [" + sChan + "] not found.");
-				return;
+			const vector<CChan*>& vChans = m_pUser->GetChans();
+			vector<CChan*>::const_iterator it;
+			unsigned int uMatches = 0, uEnabled = 0;
+			for (it = vChans.begin(); it != vChans.end(); ++it) {
+				if (!(*it)->GetName().WildCmp(sChan))
+					continue;
+				uMatches++;
+
+				if (!(*it)->IsDisabled())
+					continue;
+				uEnabled++;
+				(*it)->Enable();
 			}
 
-			pChan->Enable();
-			PutStatus("Channel [" + sChan + "] enabled.");
+			PutStatus("There were [" + CString(uMatches) + "] channels matching [" + sChan + "]");
+			PutStatus("Enabled [" + CString(uEnabled) + "] channels");
 		}
 	} else if (sCommand.Equals("LISTCHANS")) {
 		CUser* pUser = m_pUser;
@@ -774,85 +824,85 @@ void CClient::UserCommand(CString& sLine) {
 			PutStatus("Done, but there were errors, some users no longer have ["
 					+ sMod + "] loaded");
 		}
-	} else if (sCommand.Equals("ADDVHOST") && m_pUser->IsAdmin()) {
-		CString sVHost = sLine.Token(1);
+	} else if ((sCommand.Equals("ADDBINDHOST") || sCommand.Equals("ADDVHOST")) && m_pUser->IsAdmin()) {
+		CString sHost = sLine.Token(1);
 
-		if (sVHost.empty()) {
-			PutStatus("Usage: AddVHost <VHost>");
+		if (sHost.empty()) {
+			PutStatus("Usage: AddBindHost <host>");
 			return;
 		}
 
-		if (CZNC::Get().AddVHost(sVHost)) {
+		if (CZNC::Get().AddBindHost(sHost)) {
 			PutStatus("Done");
 		} else {
-			PutStatus("The VHost [" + sVHost + "] is already in the list");
+			PutStatus("The host [" + sHost + "] is already in the list");
 		}
-	} else if ((sCommand.Equals("REMVHOST") || sCommand.Equals("DELVHOST")) && m_pUser->IsAdmin()) {
-		CString sVHost = sLine.Token(1);
+	} else if ((sCommand.Equals("REMBINDHOST") || sCommand.Equals("REMVHOST") || sCommand.Equals("DELVHOST")) && m_pUser->IsAdmin()) {
+		CString sHost = sLine.Token(1);
 
-		if (sVHost.empty()) {
-			PutStatus("Usage: RemVHost <VHost>");
+		if (sHost.empty()) {
+			PutStatus("Usage: RemBindHost <host>");
 			return;
 		}
 
-		if (CZNC::Get().RemVHost(sVHost)) {
+		if (CZNC::Get().RemBindHost(sHost)) {
 			PutStatus("Done");
 		} else {
-			PutStatus("The VHost [" + sVHost + "] is not in the list");
+			PutStatus("The host [" + sHost + "] is not in the list");
 		}
-	} else if (sCommand.Equals("LISTVHOSTS") && (m_pUser->IsAdmin() || !m_pUser->DenySetVHost())) {
-		const VCString& vsVHosts = CZNC::Get().GetVHosts();
+	} else if ((sCommand.Equals("LISTBINDHOSTS") || sCommand.Equals("LISTVHOSTS")) && (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost())) {
+		const VCString& vsHosts = CZNC::Get().GetBindHosts();
 
-		if (vsVHosts.empty()) {
-			PutStatus("No VHosts configured");
+		if (vsHosts.empty()) {
+			PutStatus("No bind hosts configured");
 			return;
 		}
 
 		CTable Table;
-		Table.AddColumn("VHost");
+		Table.AddColumn("Host");
 
 		VCString::const_iterator it;
-		for (it = vsVHosts.begin(); it != vsVHosts.end(); ++it) {
+		for (it = vsHosts.begin(); it != vsHosts.end(); ++it) {
 			Table.AddRow();
-			Table.SetCell("VHost", *it);
+			Table.SetCell("Host", *it);
 		}
 		PutStatus(Table);
-	} else if (sCommand.Equals("SETVHOST") && (m_pUser->IsAdmin() || !m_pUser->DenySetVHost())) {
-		CString sVHost = sLine.Token(1);
+	} else if ((sCommand.Equals("SETBINDHOST") || sCommand.Equals("SETVHOST")) && (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost())) {
+		CString sHost = sLine.Token(1);
 
-		if (sVHost.empty()) {
-			PutStatus("Usage: SetVHost <VHost>");
+		if (sHost.empty()) {
+			PutStatus("Usage: SetBindHost <host>");
 			return;
 		}
 
-		if (sVHost.Equals(m_pUser->GetVHost())) {
-			PutStatus("You already have this VHost!");
+		if (sHost.Equals(m_pUser->GetBindHost())) {
+			PutStatus("You already have this bind host!");
 			return;
 		}
 
-		const VCString& vsVHosts = CZNC::Get().GetVHosts();
-		if (!m_pUser->IsAdmin() && !vsVHosts.empty()) {
+		const VCString& vsHosts = CZNC::Get().GetBindHosts();
+		if (!m_pUser->IsAdmin() && !vsHosts.empty()) {
 			VCString::const_iterator it;
 			bool bFound = false;
 
-			for (it = vsVHosts.begin(); it != vsVHosts.end(); ++it) {
-				if (sVHost.Equals(*it)) {
+			for (it = vsHosts.begin(); it != vsHosts.end(); ++it) {
+				if (sHost.Equals(*it)) {
 					bFound = true;
 					break;
 				}
 			}
 
 			if (!bFound) {
-				PutStatus("You may not use this VHost. See [ListVHosts] for a list");
+				PutStatus("You may not use this bind host. See [ListBindHosts] for a list");
 				return;
 			}
 		}
 
-		m_pUser->SetVHost(sVHost);
-		PutStatus("Set VHost to [" + m_pUser->GetVHost() + "]");
-	} else if (sCommand.Equals("CLEARVHOST") && (m_pUser->IsAdmin() || !m_pUser->DenySetVHost())) {
-		m_pUser->SetVHost("");
-		PutStatus("VHost Cleared");
+		m_pUser->SetBindHost(sHost);
+		PutStatus("Set bind host to [" + m_pUser->GetBindHost() + "]");
+	} else if ((sCommand.Equals("CLEARBINDHOST") || sCommand.Equals("CLEARVHOST")) && (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost())) {
+		m_pUser->SetBindHost("");
+		PutStatus("Bind Host Cleared");
 	} else if (sCommand.Equals("PLAYBUFFER")) {
 		CString sChan = sLine.Token(1);
 
@@ -894,13 +944,17 @@ void CClient::UserCommand(CString& sLine) {
 			return;
 		}
 
-		if (!pChan->IsOn()) {
-			PutStatus("You are not on [" + sChan + "] [trying]");
-			return;
-		}
+		const vector<CChan*>& vChans = m_pUser->GetChans();
+		vector<CChan*>::const_iterator it;
+		unsigned int uMatches = 0;
+		for (it = vChans.begin(); it != vChans.end(); ++it) {
+			if (!(*it)->GetName().WildCmp(sChan))
+				continue;
+			uMatches++;
 
-		pChan->ClearBuffer();
-		PutStatus("The buffer for [" + sChan + "] has been cleared");
+			(*it)->ClearBuffer();
+		}
+		PutStatus("The buffer for [" + CString(uMatches) + "] channels matching [" + sChan + "] has been cleared");
 	} else if (sCommand.Equals("CLEARALLCHANNELBUFFERS")) {
 		vector<CChan*>::const_iterator it;
 		const vector<CChan*>& vChans = m_pUser->GetChans();
@@ -917,21 +971,25 @@ void CClient::UserCommand(CString& sLine) {
 			return;
 		}
 
-		CChan* pChan = m_pUser->FindChan(sChan);
-
-		if (!pChan) {
-			PutStatus("You are not on [" + sChan + "]");
-			return;
-		}
-
-
 		unsigned int uLineCount = sLine.Token(2).ToUInt();
 
-		if (pChan->SetBufferCount(uLineCount)) {
-			PutStatus("BufferCount for [" + sChan + "] set to [" + CString(pChan->GetBufferCount()) + "]");
-		} else {
-			PutStatus("Setting the buffer count failed, max buffer count is "
-					+ CString(CZNC::Get().GetMaxBufferSize()));
+		const vector<CChan*>& vChans = m_pUser->GetChans();
+		vector<CChan*>::const_iterator it;
+		unsigned int uMatches = 0, uFail = 0;
+		for (it = vChans.begin(); it != vChans.end(); ++it) {
+			if (!(*it)->GetName().WildCmp(sChan))
+				continue;
+			uMatches++;
+
+			if (!(*it)->SetBufferCount(uLineCount))
+				uFail++;
+		}
+
+		PutStatus("BufferCount for [" + CString(uMatches - uFail) +
+				"] channels was set to [" + CString(uLineCount) + "]");
+		if (uFail > 0) {
+			PutStatus("Setting BufferCount failed for [" + CString(uFail) + "] channels, "
+					"max buffer count is " + CString(CZNC::Get().GetMaxBufferSize()));
 		}
 	} else if (m_pUser->IsAdmin() && sCommand.Equals("TRAFFIC")) {
 		CZNC::TrafficStatsPair Users, ZNC, Total;
@@ -1085,6 +1143,9 @@ void CClient::HelpUser() {
 	Table.AddColumn("Arguments");
 	Table.AddColumn("Description");
 
+	PutStatus("In the following list all occurences of <#chan> support wildcards (* and ?)");
+	PutStatus("(Except ListNicks)");
+
 	Table.AddRow();
 	Table.SetCell("Command", "Version");
 	Table.SetCell("Description", "Print which version of ZNC this is");
@@ -1167,34 +1228,34 @@ void CClient::HelpUser() {
 
 	if (m_pUser->IsAdmin()) {
 		Table.AddRow();
-		Table.SetCell("Command", "AddVHost");
-		Table.SetCell("Arguments", "<vhost (IP preferred)>");
-		Table.SetCell("Description", "Adds a VHost for normal users to use");
+		Table.SetCell("Command", "AddBindHost");
+		Table.SetCell("Arguments", "<host (IP preferred)>");
+		Table.SetCell("Description", "Adds a bind host for normal users to use");
 
 		Table.AddRow();
-		Table.SetCell("Command", "RemVHost");
-		Table.SetCell("Arguments", "<vhost>");
-		Table.SetCell("Description", "Removes a VHost from the list");
+		Table.SetCell("Command", "RemBindHost");
+		Table.SetCell("Arguments", "<host>");
+		Table.SetCell("Description", "Removes a bind host from the list");
 	}
 
-	if (m_pUser->IsAdmin() || !m_pUser->DenySetVHost()) {
+	if (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost()) {
 		Table.AddRow();
-		Table.SetCell("Command", "ListVHosts");
-		Table.SetCell("Description", "Shows the configured list of vhosts");
+		Table.SetCell("Command", "ListBindHosts");
+		Table.SetCell("Description", "Shows the configured list of bind hosts");
 
 		Table.AddRow();
-		Table.SetCell("Command", "SetVHost");
-		Table.SetCell("Arguments", "<vhost (IP preferred)>");
-		Table.SetCell("Description", "Set the VHost for this connection");
+		Table.SetCell("Command", "SetBindHost");
+		Table.SetCell("Arguments", "<host (IP preferred)>");
+		Table.SetCell("Description", "Set the bind host for this connection");
 
 		Table.AddRow();
-		Table.SetCell("Command", "ClearVHost");
-		Table.SetCell("Description", "Clear the VHost for this connection");
+		Table.SetCell("Command", "ClearBindHost");
+		Table.SetCell("Description", "Clear the bind host for this connection");
 	}
 
 	Table.AddRow();
-	Table.SetCell("Command", "Jump");
-	Table.SetCell("Description", "Jump to the next server in the list");
+	Table.SetCell("Command", "Jump [server]");
+	Table.SetCell("Description", "Jump to the next or the specified server");
 
 	Table.AddRow();
 	Table.SetCell("Command", "Disconnect");
@@ -1268,12 +1329,12 @@ void CClient::HelpUser() {
 
 		Table.AddRow();
 		Table.SetCell("Command", "AddPort");
-		Table.SetCell("Arguments", "<[+]port> <ipv4|ipv6|all> <web|irc|all> [bindhost]");
+		Table.SetCell("Arguments", "<arguments>");
 		Table.SetCell("Description", "Add another port for ZNC to listen on");
 
 		Table.AddRow();
 		Table.SetCell("Command", "DelPort");
-		Table.SetCell("Arguments", "<port> <ipv4|ipv6|all> [bindhost]");
+		Table.SetCell("Arguments", "<arguments>");
 		Table.SetCell("Description", "Remove a port from ZNC");
 
 		Table.AddRow();

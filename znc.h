@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -9,6 +9,7 @@
 #ifndef _ZNC_H
 #define _ZNC_H
 
+#include "zncconfig.h"
 #include "Client.h"
 #include "FileUtils.h"
 #include "Modules.h"
@@ -39,7 +40,6 @@ public:
 	bool WritePidFile(int iPid);
 	bool DeletePidFile();
 	bool WaitForChildLock();
-	Csock* FindSockByName(const CString& sSockName);
 	bool IsHostAllowed(const CString& sHostMask) const;
 	// This returns false if there are too many anonymous connections from this ip
 	bool AllowConnectionFrom(const CString& sIP) const;
@@ -53,9 +53,9 @@ public:
 	static CString GetVersion();
 	static CString GetTag(bool bIncludeVersion = true);
 	CString GetUptime() const;
-	void ClearVHosts();
-	bool AddVHost(const CString& sHost);
-	bool RemVHost(const CString& sHost);
+	void ClearBindHosts();
+	bool AddBindHost(const CString& sHost);
+	bool RemBindHost(const CString& sHost);
 	void Broadcast(const CString& sMessage, bool bAdminOnly = false,
 			CUser* pSkipUser = NULL, CClient* pSkipClient = NULL);
 	void AddBytesRead(unsigned long long u) { m_uBytesRead += u; }
@@ -85,6 +85,9 @@ public:
 	void SetISpoofFile(const CString& s) { m_sISpoofFile = s; }
 	void SetISpoofFormat(const CString& s) { m_sISpoofFormat = (s.empty()) ? "global { reply \"%\" }" : s; }
 	void SetMaxBufferSize(unsigned int i) { m_uiMaxBufferSize = i; }
+	void SetAnonIPLimit(unsigned int i) { m_uiAnonIPLimit = i; }
+	void SetServerThrottle(unsigned int i) { m_sConnectThrottle.SetTTL(i*1000); }
+	void SetConnectDelay(unsigned int i);
 	// !Setters
 
 	// Getters
@@ -106,10 +109,13 @@ public:
 	bool WritePemFile();
 	const CString& GetISpoofFile() const { return m_sISpoofFile; }
 	const CString& GetISpoofFormat() const { return m_sISpoofFormat; }
-	const VCString& GetVHosts() const { return m_vsVHosts; }
+	const VCString& GetBindHosts() const { return m_vsBindHosts; }
 	const vector<CListener*>& GetListeners() const { return m_vpListeners; }
 	time_t TimeStarted() const { return m_TimeStarted; }
 	unsigned int GetMaxBufferSize() const { return m_uiMaxBufferSize; }
+	unsigned int GetAnonIPLimit() const { return m_uiAnonIPLimit; }
+	unsigned int GetServerThrottle() const { return m_sConnectThrottle.GetTTL() / 1000; }
+	unsigned int GetConnectDelay() const { return m_uiConnectDelay; }
 	// !Getters
 
 	// Static allocator
@@ -147,6 +153,7 @@ private:
 	bool DoRehash(CString& sError);
 	// Returns true if something was done
 	bool HandleUserDeletion();
+	CString MakeConfigHeader();
 
 protected:
 	time_t                 m_TimeStarted;
@@ -169,7 +176,7 @@ protected:
 	CString                m_sISpoofFormat;
 	CString                m_sPidFile;
 	CString                m_sSSLCertFile;
-	VCString               m_vsVHosts;
+	VCString               m_vsBindHosts;
 	VCString               m_vsMotd;
 	CFile                  m_LockFile;
 	CFile*                 m_pISpoofLockFile;

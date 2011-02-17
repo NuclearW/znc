@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -28,7 +28,7 @@ CString::CString(unsigned long long i) : string() { stringstream s; s << i; *thi
 CString::CString(double i, int precision) : string() { stringstream s; s.precision(precision); s << std::fixed << i; *this = s.str(); }
 CString::CString(float i, int precision) : string() { stringstream s; s.precision(precision); s << std::fixed << i; *this = s.str(); }
 
-inline unsigned char* CString::strnchr(const unsigned char* src, unsigned char c, unsigned int iMaxBytes, unsigned char* pFill, unsigned int* piCount) const {
+unsigned char* CString::strnchr(const unsigned char* src, unsigned char c, unsigned int iMaxBytes, unsigned char* pFill, unsigned int* piCount) const {
 	for (unsigned int a = 0; a < iMaxBytes && *src; a++, src++) {
 		if (pFill) {
 			pFill[a] = *src;
@@ -1031,7 +1031,7 @@ bool CString::RightChomp(unsigned int uLen) {
 }
 
 //////////////// MCString ////////////////
-int MCString::WriteToDisk(const CString& sPath, mode_t iMode) const {
+MCString::status_t MCString::WriteToDisk(const CString& sPath, mode_t iMode) const {
 	CFile cFile(sPath);
 
 	if (this->empty()) {
@@ -1066,10 +1066,10 @@ int MCString::WriteToDisk(const CString& sPath, mode_t iMode) const {
 	return MCS_SUCCESS;
 }
 
-int MCString::ReadFromDisk(const CString& sPath, mode_t iMode) {
+MCString::status_t MCString::ReadFromDisk(const CString& sPath) {
 	clear();
 	CFile cFile(sPath);
-	if (!cFile.Open(O_RDONLY, iMode)) {
+	if (!cFile.Open(O_RDONLY)) {
 		return MCS_EOPEN;
 	}
 

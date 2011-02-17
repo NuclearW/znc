@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -14,8 +14,45 @@
 /// @todo Do we want to make this a configure option?
 #define _SKINDIR_ _DATADIR_ "/webskins"
 
-// Sessions are valid for a day, (24h, ...)
-CWebSessionMap CWebSock::m_mspSessions(24 * 60 * 60 * 1000);
+const unsigned int CWebSock::m_uiMaxSessions = 5;
+
+// We need this class to make sure the contained maps and their content is
+// destroyed in the order that we want.
+struct CSessionManager {
+	// Sessions are valid for a day, (24h, ...)
+	CSessionManager() : m_mspSessions(24 * 60 * 60 * 1000) {}
+	~CSessionManager() {
+		// Make sure all sessions are destroyed before any of our maps
+		// are destroyed
+		m_mspSessions.Clear();
+	}
+
+	CWebSessionMap m_mspSessions;
+	std::multimap<CString, CWebSession*> m_mIPSessions;
+};
+typedef std::multimap<CString, CWebSession*>::iterator mIPSessionsIterator;
+
+static CSessionManager Sessions;
+
+void CWebSock::FinishUserSessions(const CUser& User) {
+	Sessions.m_mspSessions.FinishUserSessions(User);
+}
+
+CWebSession::~CWebSession() {
+	// Find our entry in mIPSessions
+	pair<mIPSessionsIterator, mIPSessionsIterator> p =
+		Sessions.m_mIPSessions.equal_range(m_sIP);
+	mIPSessionsIterator it = p.first;
+	mIPSessionsIterator end = p.second;
+
+	while (it != end) {
+		if (it->second == this) {
+			Sessions.m_mIPSessions.erase(it++);
+		} else {
+			++it;
+		}
+	}
+}
 
 CZNCTagHandler::CZNCTagHandler(CWebSock& WebSock) : CTemplateTagHandler(), m_WebSock(WebSock) {
 }
@@ -30,8 +67,9 @@ bool CZNCTagHandler::HandleTag(CTemplate& Tmpl, const CString& sName, const CStr
 	return false;
 }
 
-CWebSession::CWebSession(const CString& sId) : m_sId(sId) {
+CWebSession::CWebSession(const CString& sId, const CString& sIP) : m_sId(sId), m_sIP(sIP) {
 	m_pUser = NULL;
+	Sessions.m_mIPSessions.insert(make_pair(sIP, this));
 }
 
 bool CWebSession::IsAdmin() const { return IsLoggedIn() && m_pUser->IsAdmin(); }
@@ -143,9 +181,7 @@ CWebSock::~CWebSock() {
 
 void CWebSock::ParsePath() {
 	// The URI looks like:
-	//         /[user:][module][/page][?arg1=val1&arg2=val2...]
-
-	m_sForceUser.clear();
+	//         /[module][/page][?arg1=val1&arg2=val2...]
 
 	m_sPath = GetPath().TrimLeft_n("/");
 
@@ -155,59 +191,14 @@ void CWebSock::ParsePath() {
 	m_sModName = m_sPath.Token(0, false, "/");
 	m_sPage = m_sPath.Token(1, true, "/");
 
-	if (m_sModName.find(":") != CString::npos) {
-		m_sForceUser = m_sModName.Token(0, false, ":");
-		m_sModName = m_sModName.Token(1, false, ":");
-	}
-
 	if (m_sPage.empty()) {
 		m_sPage = "index";
 	}
 
-	DEBUG("Path [" + m_sPath + "], User [" + m_sForceUser + "], Module [" + m_sModName + "], Page [" + m_sPage + "]");
+	DEBUG("Path [" + m_sPath + "], Module [" + m_sModName + "], Page [" + m_sPage + "]");
 }
 
-CModule* CWebSock::ResolveModule() {
-	ParsePath();
-	CModule* pModRet = NULL;
-
-	// Dot means static file, not module
-	if (m_sModName.find(".") != CString::npos) {
-		return NULL;
-	}
-
-	// First look for forced user-mods
-	if (!m_sForceUser.empty()) {
-		CUser* pUser = CZNC::Get().FindUser(m_sForceUser);
-
-		if (pUser) {
-			pModRet = pUser->GetModules().FindModule(m_sModName);
-		} else {
-			DEBUG("User not found while trying to handle web request for [" + m_sPage + "]");
-		}
-	} else {
-		// This could be user level or global level, check both
-		pModRet = CZNC::Get().GetModules().FindModule(m_sModName);
-
-		if (!pModRet) {
-			// It's not a loaded global module and it has no forced username so we
-			// have to force a login to try a module loaded by the current user
-			if (!ForceLogin()) {
-				return NULL;
-			}
-
-			pModRet = GetSession()->GetUser()->GetModules().FindModule(m_sModName);
-		}
-	}
-
-	if (!pModRet) {
-		DEBUG("Module not found");
-	}
-
-	return pModRet;
-}
-
-size_t CWebSock::GetAvailSkins(vector<CFile>& vRet) {
+size_t CWebSock::GetAvailSkins(vector<CFile>& vRet) const {
 	vRet.clear();
 
 	CString sRoot(GetSkinPath("_default_"));
@@ -243,11 +234,10 @@ size_t CWebSock::GetAvailSkins(vector<CFile>& vRet) {
 	return vRet.size();
 }
 
-void CWebSock::SetPaths(CModule* pModule, bool bIsTemplate) {
-	m_Template.ClearPaths();
-
+VCString CWebSock::GetDirs(CModule* pModule, bool bIsTemplate) {
 	CString sHomeSkinsDir(CZNC::Get().GetZNCPath() + "/webskins/");
 	CString sSkinName(GetSkinName());
+	VCString vsResult;
 
 	// Module specific paths
 
@@ -257,37 +247,60 @@ void CWebSock::SetPaths(CModule* pModule, bool bIsTemplate) {
 		// 1. ~/.znc/webskins/<user_skin_setting>/mods/<mod_name>/
 		//
 		if (!sSkinName.empty()) {
-			m_Template.AppendPath(GetSkinPath(sSkinName) + "/mods/" + sModName + "/");
+			vsResult.push_back(GetSkinPath(sSkinName) + "/mods/" + sModName + "/");
 		}
 
 		// 2. ~/.znc/webskins/_default_/mods/<mod_name>/
 		//
-		m_Template.AppendPath(GetSkinPath("_default_") + "/mods/" + sModName + "/");
+		vsResult.push_back(GetSkinPath("_default_") + "/mods/" + sModName + "/");
 
 		// 3. ./modules/<mod_name>/tmpl/
 		//
-		m_Template.AppendPath(pModule->GetModDataDir() + "/tmpl/");
+		vsResult.push_back(pModule->GetModDataDir() + "/tmpl/");
 
 		// 4. ~/.znc/webskins/<user_skin_setting>/mods/<mod_name>/
 		//
 		if (!sSkinName.empty()) {
-			m_Template.AppendPath(GetSkinPath(sSkinName) + "/mods/" + sModName + "/");
+			vsResult.push_back(GetSkinPath(sSkinName) + "/mods/" + sModName + "/");
 		}
 
 		// 5. ~/.znc/webskins/_default_/mods/<mod_name>/
 		//
-		m_Template.AppendPath(GetSkinPath("_default_") + "/mods/" + sModName + "/");
+		vsResult.push_back(GetSkinPath("_default_") + "/mods/" + sModName + "/");
 	}
 
 	// 6. ~/.znc/webskins/<user_skin_setting>/
 	//
 	if (!sSkinName.empty()) {
-		m_Template.AppendPath(GetSkinPath(sSkinName) + CString(bIsTemplate ? "/tmpl/" : "/"), (0 && pModule != NULL));
+		vsResult.push_back(GetSkinPath(sSkinName) + CString(bIsTemplate ? "/tmpl/" : "/"));
 	}
 
 	// 7. ~/.znc/webskins/_default_/
 	//
-	m_Template.AppendPath(GetSkinPath("_default_") + CString(bIsTemplate ? "/tmpl/" : "/"), (0 && pModule != NULL));
+	vsResult.push_back(GetSkinPath("_default_") + CString(bIsTemplate ? "/tmpl/" : "/"));
+
+	return vsResult;
+}
+
+CString CWebSock::FindTmpl(CModule* pModule, const CString& sName) {
+	VCString vsDirs = GetDirs(pModule, true);
+	CString sFile = pModule->GetModName() + "_" + sName;
+	for (size_t i = 0; i < vsDirs.size(); ++i) {
+		if (CFile::Exists(CDir::ChangeDir(vsDirs[i], sFile))) {
+			m_Template.AppendPath(vsDirs[i]);
+			return sFile;
+		}
+	}
+	return sName;
+}
+
+void CWebSock::SetPaths(CModule* pModule, bool bIsTemplate) {
+	m_Template.ClearPaths();
+
+	VCString vsDirs = GetDirs(pModule, bIsTemplate);
+	for (size_t i = 0; i < vsDirs.size(); ++i) {
+		m_Template.AppendPath(vsDirs[i]);
+	}
 
 	m_bPathsSet = true;
 }
@@ -434,7 +447,7 @@ CWebSock::EPageReqResult CWebSock::PrintTemplate(const CString& sPageName, CStri
 	}
 }
 
-CString CWebSock::GetSkinPath(const CString& sSkinName) const {
+CString CWebSock::GetSkinPath(const CString& sSkinName) {
 	CString sRet = CZNC::Get().GetZNCPath() + "/webskins/" + sSkinName;
 
 	if (!CFile::IsDir(sRet)) {
@@ -498,6 +511,7 @@ void CWebSock::OnPageRequest(const CString& sURI) {
 		// the connection will be closed
 		Close(CLT_AFTERWRITE);
 		break;
+	case PAGE_NOTFOUND:
 	default:
 		PrintNotFound();
 		break;
@@ -505,6 +519,11 @@ void CWebSock::OnPageRequest(const CString& sURI) {
 }
 
 CWebSock::EPageReqResult CWebSock::OnPageRequestInternal(const CString& sURI, CString& sPageRet) {
+	if (GetSession()->GetIP() != GetRemoteIP()) {
+		PrintErrorPage(403, "Access denied", "This session does not belong to your IP.");
+		return PAGE_DONE;
+	}
+
 	// Check that they really POSTed from one our forms by checking if they
 	// know the "secret" CSRF check value. Don't do this for login since
 	// CSRF against the login form makes no sense and the login form does a
@@ -578,19 +597,14 @@ CWebSock::EPageReqResult CWebSock::OnPageRequestInternal(const CString& sURI, CS
 			return PAGE_DONE;
 		}
 
-		if (m_sModName.empty()) {
-			return PrintTemplate("modlist", sPageRet);
-		}
-
-		DEBUG("FindModule(" + m_sModName + ", " + m_sForceUser + ")");
-		CModule* pModule = CZNC::Get().FindModule(m_sModName, m_sForceUser);
-
-		if (!pModule && m_sForceUser.empty()) {
-			if (!ForceLogin()) {
+		CModule *pModule = CZNC::Get().GetModules().FindModule(m_sModName);
+		if (!pModule) {
+			// Check if GetSession()->GetUser() is NULL and display
+			// an error in that case
+			if (!ForceLogin())
 				return PAGE_DONE;
-			}
 
-			pModule = CZNC::Get().FindModule(m_sModName, GetSession()->GetUser());
+			pModule = GetSession()->GetUser()->GetModules().FindModule(m_sModName);
 		}
 
 		if (!pModule) {
@@ -684,14 +698,19 @@ CSmartPtr<CWebSession> CWebSock::GetSession() {
 	}
 
 	const CString sCookieSessionId = GetRequestCookie("SessionId");
-	CSmartPtr<CWebSession> *pSession = m_mspSessions.GetItem(sCookieSessionId);
+	CSmartPtr<CWebSession> *pSession = Sessions.m_mspSessions.GetItem(sCookieSessionId);
 
 	if (pSession != NULL) {
 		// Refresh the timeout
-		m_mspSessions.AddItem((*pSession)->GetId(), *pSession);
+		Sessions.m_mspSessions.AddItem((*pSession)->GetId(), *pSession);
 		m_spSession = *pSession;
 		DEBUG("Found existing session from cookie: [" + sCookieSessionId + "] IsLoggedIn(" + CString((*pSession)->IsLoggedIn() ? "true" : "false") + ")");
 		return *pSession;
+	}
+
+	if (Sessions.m_mIPSessions.count(GetRemoteIP()) > m_uiMaxSessions) {
+		mIPSessionsIterator it = Sessions.m_mIPSessions.find(GetRemoteIP());
+		Sessions.m_mIPSessions.erase(it);
 	}
 
 	CString sSessionID;
@@ -703,10 +722,10 @@ CSmartPtr<CWebSession> CWebSock::GetSession() {
 		sSessionID = sSessionID.SHA256();
 
 		DEBUG("Auto generated session: [" + sSessionID + "]");
-	} while (m_mspSessions.HasItem(sSessionID));
+	} while (Sessions.m_mspSessions.HasItem(sSessionID));
 
-	CSmartPtr<CWebSession> spSession(new CWebSession(sSessionID));
-	m_mspSessions.AddItem(spSession->GetId(), spSession);
+	CSmartPtr<CWebSession> spSession(new CWebSession(sSessionID, GetRemoteIP()));
+	Sessions.m_mspSessions.AddItem(spSession->GetId(), spSession);
 
 	m_spSession = spSession;
 

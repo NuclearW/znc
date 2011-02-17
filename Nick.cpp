@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010  See the AUTHORS file for details.
+ * Copyright (C) 2004-2011  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -55,9 +55,9 @@ unsigned int CNick::GetCommonChans(vector<CChan*>& vRetChans, CUser* pUser) cons
 
 	for (unsigned int a = 0; a < vChans.size(); a++) {
 		CChan* pChan = vChans[a];
-		const map<CString,CNick*>& msNicks = pChan->GetNicks();
+		const map<CString,CNick>& msNicks = pChan->GetNicks();
 
-		for (map<CString,CNick*>::const_iterator it = msNicks.begin(); it != msNicks.end(); ++it) {
+		for (map<CString,CNick>::const_iterator it = msNicks.begin(); it != msNicks.end(); ++it) {
 			if (it->first.Equals(m_sNick)) {
 				vRetChans.push_back(pChan);
 				continue;
@@ -131,11 +131,15 @@ const CString& CNick::GetNick() const { return m_sNick; }
 const CString& CNick::GetIdent() const { return m_sIdent; }
 const CString& CNick::GetHost() const { return m_sHost; }
 CString CNick::GetNickMask() const {
-	if (m_sNick.find('.') != CString::npos) {
-		return m_sNick;
+	CString sRet = m_sNick;
+
+	if (!m_sHost.empty()) {
+		if (!m_sIdent.empty())
+			sRet += "!" + m_sIdent;
+		sRet += "@" + m_sHost;
 	}
 
-	return (m_sNick + "!" + m_sIdent + "@" + m_sHost);
+	return sRet;
 }
 
 CString CNick::GetHostMask() const {
