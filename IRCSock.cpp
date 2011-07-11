@@ -9,7 +9,6 @@
 #include "IRCSock.h"
 #include "Chan.h"
 #include "Client.h"
-#include "DCCBounce.h"
 #include "User.h"
 #include "znc.h"
 
@@ -19,7 +18,6 @@ const unsigned int CIRCSock::m_uCTCPFloodCount = 5;
 
 CIRCSock::CIRCSock(CUser* pUser) : CZNCSock() {
 	m_pUser = pUser;
-	m_bISpoofReleased = false;
 	m_bAuthed = false;
 	m_bNamesx = false;
 	m_bUHNames = false;
@@ -51,6 +49,10 @@ CIRCSock::CIRCSock(CUser* pUser) : CZNCSock() {
 }
 
 CIRCSock::~CIRCSock() {
+	if (!m_bAuthed) {
+		MODULECALL(OnIRCConnectionError(this), m_pUser, NULL, NOTHING);
+	}
+
 	const vector<CChan*>& vChans = m_pUser->GetChans();
 	for (unsigned int a = 0; a < vChans.size(); a++) {
 		vChans[a]->Reset();
@@ -60,10 +62,6 @@ CIRCSock::~CIRCSock() {
 
 	for (map<CString, CChan*>::iterator a = m_msChans.begin(); a != m_msChans.end(); ++a) {
 		delete a->second;
-	}
-
-	if (!m_bISpoofReleased) {
-		CZNC::Get().ReleaseISpoof();
 	}
 
 	Quit();
@@ -77,8 +75,11 @@ void CIRCSock::Quit(const CString& sQuitMsg) {
 		Close(CLT_NOW);
 		return;
 	}
-	CString sMsg = (!sQuitMsg.empty()) ? sQuitMsg : m_pUser->GetQuitMsg();
-	PutIRC("QUIT :" + sMsg);
+	if (!sQuitMsg.empty()) {
+		PutIRC("QUIT :" + sQuitMsg);
+	} else {
+		PutIRC("QUIT :" + m_pUser->ExpandString(m_pUser->GetQuitMsg()));
+	}
 	Close(CLT_AFTERWRITE);
 }
 
@@ -129,7 +130,7 @@ void CIRCSock::ReadLine(const CString& sData) {
 				}
 
 				m_pUser->SetIRCServer(sServer);
-				SetTimeout(240, TMO_READ);  // Now that we are connected, let nature take its course
+				SetTimeout(540, TMO_READ);  // Now that we are connected, let nature take its course
 				PutIRC("WHO " + sNick);
 
 				m_bAuthed = true;
@@ -153,9 +154,6 @@ void CIRCSock::ReadLine(const CString& sData) {
 
 				m_pUser->ClearRawBuffer();
 				m_pUser->AddRawBuffer(":" + sServer + " " + sCmd + " ", " " + sRest);
-
-				CZNC::Get().ReleaseISpoof();
-				m_bISpoofReleased = true;
 
 				break;
 			}
@@ -711,7 +709,7 @@ void CIRCSock::ReadLine(const CString& sData) {
 					sArgs.Trim();
 					MODULECALL(OnServerCapResult(sArgs, false), m_pUser, NULL, NOTHING);
 				}
-				
+
 				SendNextCap();
 			}
 			// Don't forward any CAP stuff to the client
@@ -769,67 +767,16 @@ bool CIRCSock::OnPrivCTCP(CNick& Nick, CString& sMessage) {
 		sMessage = "ACTION " + sMessage;
 	}
 
-	if (sMessage.Equals("DCC ", false, 4) && m_pUser && m_pUser->BounceDCCs() && m_pUser->IsUserAttached()) {
-		// DCC CHAT chat 2453612361 44592
-		CString sType = sMessage.Token(1);
-		CString sFile = sMessage.Token(2);
-		unsigned long uLongIP = sMessage.Token(3).ToULong();
-		unsigned short uPort = sMessage.Token(4).ToUShort();
-		unsigned long uFileSize = sMessage.Token(5).ToULong();
-
-		if (sType.Equals("CHAT")) {
-			CNick FromNick(Nick.GetNickMask());
-			unsigned short uBNCPort = CDCCBounce::DCCRequest(FromNick.GetNick(), uLongIP, uPort, "", true, m_pUser, CUtils::GetIP(uLongIP));
-			if (uBNCPort) {
-				CString sIP = m_pUser->GetLocalDCCIP();
-				m_pUser->PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + GetNick() + " :\001DCC CHAT chat " + CString(CUtils::GetLongIP(sIP)) + " " + CString(uBNCPort) + "\001");
-			}
-		} else if (sType.Equals("SEND")) {
-			// DCC SEND readme.txt 403120438 5550 1104
-			unsigned short uBNCPort = CDCCBounce::DCCRequest(Nick.GetNick(), uLongIP, uPort, sFile, false, m_pUser, CUtils::GetIP(uLongIP));
-			if (uBNCPort) {
-				CString sIP = m_pUser->GetLocalDCCIP();
-				m_pUser->PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + GetNick() + " :\001DCC SEND " + sFile + " " + CString(CUtils::GetLongIP(sIP)) + " " + CString(uBNCPort) + " " + CString(uFileSize) + "\001");
-			}
-		} else if (sType.Equals("RESUME")) {
-			// Need to lookup the connection by port, filter the port, and forward to the user
-			CDCCBounce* pSock = (CDCCBounce*) CZNC::Get().GetManager().FindSockByLocalPort(sMessage.Token(3).ToUShort());
-
-			if (pSock && pSock->GetSockName().Equals("DCC::", false, 5)) {
-				m_pUser->PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + GetNick() + " :\001DCC " + sType + " " + sFile + " " + CString(pSock->GetUserPort()) + " " + sMessage.Token(4) + "\001");
-			}
-		} else if (sType.Equals("ACCEPT")) {
-			// Need to lookup the connection by port, filter the port, and forward to the user
-			CSockManager& Manager = CZNC::Get().GetManager();
-
-			for (unsigned int a = 0; a < Manager.size(); a++) {
-				CDCCBounce* pSock = (CDCCBounce*) Manager[a];
-
-				if (pSock && pSock->GetSockName().Equals("DCC::", false, 5)) {
-					if (pSock->GetUserPort() == sMessage.Token(3).ToUShort()) {
-						m_pUser->PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + GetNick() + " :\001DCC " + sType + " " + sFile + " " + CString(pSock->GetLocalPort()) + " " + sMessage.Token(4) + "\001");
-					}
-				}
-			}
-		}
-
-		return true;
-	}
-
 	// This handles everything which wasn't handled yet
 	return OnGeneralCTCP(Nick, sMessage);
 }
 
 bool CIRCSock::OnGeneralCTCP(CNick& Nick, CString& sMessage) {
 	const MCString& mssCTCPReplies = m_pUser->GetCTCPReplies();
-	MCString::const_iterator it = mssCTCPReplies.find(sMessage.AsUpper());
 	CString sQuery = sMessage.Token(0).AsUpper();
+	MCString::const_iterator it = mssCTCPReplies.find(sQuery);
 	bool bHaveReply = false;
 	CString sReply;
-
-	if (it == mssCTCPReplies.end()) {
-		it = mssCTCPReplies.find(sQuery);
-	}
 
 	if (it != mssCTCPReplies.end()) {
 		sReply = m_pUser->ExpandString(it->second);

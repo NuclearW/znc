@@ -11,7 +11,6 @@
 
 #include "zncconfig.h"
 #include "Client.h"
-#include "FileUtils.h"
 #include "Modules.h"
 #include "Socket.h"
 #include <map>
@@ -21,6 +20,8 @@ using std::map;
 class CListener;
 class CUser;
 class CConnectUserTimer;
+class CConfig;
+class CFile;
 
 class CZNC {
 public:
@@ -35,8 +36,6 @@ public:
 
 	void DeleteUsers();
 	void Loop();
-	bool WriteISpoof(CUser* pUser);
-	void ReleaseISpoof();
 	bool WritePidFile(int iPid);
 	bool DeletePidFile();
 	bool WaitForChildLock();
@@ -82,11 +81,10 @@ public:
 	void SetConfigState(enum ConfigState e) { m_eConfigState = e; }
 	void SetSkinName(const CString& s) { m_sSkinName = s; }
 	void SetStatusPrefix(const CString& s) { m_sStatusPrefix = (s.empty()) ? "*" : s; }
-	void SetISpoofFile(const CString& s) { m_sISpoofFile = s; }
-	void SetISpoofFormat(const CString& s) { m_sISpoofFormat = (s.empty()) ? "global { reply \"%\" }" : s; }
 	void SetMaxBufferSize(unsigned int i) { m_uiMaxBufferSize = i; }
 	void SetAnonIPLimit(unsigned int i) { m_uiAnonIPLimit = i; }
 	void SetServerThrottle(unsigned int i) { m_sConnectThrottle.SetTTL(i*1000); }
+	void SetProtectWebSessions(bool b) { m_bProtectWebSessions = b; }
 	void SetConnectDelay(unsigned int i);
 	// !Setters
 
@@ -98,17 +96,15 @@ public:
 	size_t FilterUncommonModules(set<CModInfo>& ssModules);
 	CString GetSkinName() const { return m_sSkinName; }
 	const CString& GetStatusPrefix() const { return m_sStatusPrefix; }
-	const CString& GetCurPath() const { if (!CFile::Exists(m_sCurPath)) { CDir::MakeDir(m_sCurPath); } return m_sCurPath; }
-	const CString& GetHomePath() const { if (!CFile::Exists(m_sHomePath)) { CDir::MakeDir(m_sHomePath); } return m_sHomePath; }
-	const CString& GetZNCPath() const { if (!CFile::Exists(m_sZNCPath)) { CDir::MakeDir(m_sZNCPath); } return m_sZNCPath; }
+	const CString& GetCurPath() const;
+	const CString& GetHomePath() const;
+	const CString& GetZNCPath() const;
 	CString GetConfPath(bool bAllowMkDir = true) const;
 	CString GetUserPath() const;
 	CString GetModPath() const;
-	CString GetPemLocation() const { return m_sSSLCertFile; }
+	CString GetPemLocation() const;
 	const CString& GetConfigFile() const { return m_sConfigFile; }
 	bool WritePemFile();
-	const CString& GetISpoofFile() const { return m_sISpoofFile; }
-	const CString& GetISpoofFormat() const { return m_sISpoofFormat; }
 	const VCString& GetBindHosts() const { return m_vsBindHosts; }
 	const vector<CListener*>& GetListeners() const { return m_vpListeners; }
 	time_t TimeStarted() const { return m_TimeStarted; }
@@ -116,6 +112,7 @@ public:
 	unsigned int GetAnonIPLimit() const { return m_uiAnonIPLimit; }
 	unsigned int GetServerThrottle() const { return m_sConnectThrottle.GetTTL() / 1000; }
 	unsigned int GetConnectDelay() const { return m_uiConnectDelay; }
+	bool GetProtectWebSessions() const { return m_bProtectWebSessions; }
 	// !Getters
 
 	// Static allocator
@@ -148,12 +145,15 @@ public:
 	// Never call this unless you are CConnectUserTimer::~CConnectUserTimer()
 	void LeakConnectUser(CConnectUserTimer *pTimer);
 
+	static void DumpConfig(const CConfig* Config);
+
 private:
 	CFile* InitPidFile();
 	bool DoRehash(CString& sError);
 	// Returns true if something was done
 	bool HandleUserDeletion();
 	CString MakeConfigHeader();
+	bool AddListener(const CString& sLine, CString& sError);
 
 protected:
 	time_t                 m_TimeStarted;
@@ -165,21 +165,16 @@ protected:
 	CSockManager           m_Manager;
 
 	CString                m_sCurPath;
-	CString                m_sHomePath;
 	CString                m_sZNCPath;
 
 	CString                m_sConfigFile;
 	CString                m_sSkinName;
 	CString                m_sStatusPrefix;
-	CString                m_sISpoofFile;
-	CString                m_sOrigISpoof;
-	CString                m_sISpoofFormat;
 	CString                m_sPidFile;
 	CString                m_sSSLCertFile;
 	VCString               m_vsBindHosts;
 	VCString               m_vsMotd;
-	CFile                  m_LockFile;
-	CFile*                 m_pISpoofLockFile;
+	CFile*                 m_pLockFile;
 	unsigned int           m_uiConnectDelay;
 	unsigned int           m_uiAnonIPLimit;
 	unsigned int           m_uiMaxBufferSize;
@@ -188,6 +183,7 @@ protected:
 	unsigned long long     m_uBytesWritten;
 	CConnectUserTimer     *m_pConnectUserTimer;
 	TCacheMap<CString>     m_sConnectThrottle;
+	bool                   m_bProtectWebSessions;
 };
 
 #endif // !_ZNC_H

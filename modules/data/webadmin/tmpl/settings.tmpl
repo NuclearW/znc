@@ -67,18 +67,6 @@
 				<div style="clear: both;"></div>
 
 				<div class="subsection half">
-					<div class="inputlabel">ISpoofFile:</div>
-					<div><input type="text" name="ispooffile" value="<? VAR ISpoofFile ?>" /></div>
-					<br /><span class="info">Example: ~/.oidentd.conf</span>
-				</div>
-
-				<div class="subsection half">
-					<div class="inputlabel">ISpoofFormat:</div>
-					<div><input type="text" name="ispoofformat" value="<? VAR ISpoofFormat ?>" /></div>
-				</div>
-				<div style="clear: both;"></div>
-
-				<div class="subsection half">
 					<div class="inputlabel">Maximum Buffer Size:</div>
 					<div><input type="text" name="maxbufsize" value="<? VAR MaxBufferSize ?>" /></div>
 				</div>
@@ -99,6 +87,13 @@
 				<div class="subsection half">
 					<div class="inputlabel">Anonymous IP Limit:</div>
 					<div><input type="text" name="anoniplimit" value="<? VAR AnonIPLimit ?>" /></div>
+				</div>
+				<div style="clear: both;"></div>
+
+				<div class="subsection">
+					<div class="inputlabel">Protect Web Sessions:</div>
+					<div class="checkbox"><input type="checkbox" name="protectwebsessions" id="protectwebsessions_checkbox"<? IF ProtectWebSessions ?> checked="checked"<? ENDIF ?> />
+						<label for="protectwebsessions_checkbox">Disallow IP changing during each web session</label></div>
 				</div>
 				<div style="clear: both;"></div>
 
@@ -137,7 +132,7 @@
 					<tbody>
 					<? LOOP ModuleLoop ?>
 					<tr class="<? IF __EVEN__ ?>evenrow<? ELSE ?>oddrow<? ENDIF ?>">
-						<td class="mod_name"><input type="checkbox" name="loadmod" id="lm_<? VAR Name ?>" value="<? VAR Name ?>"<? IF Checked ?> checked="checked"<? ENDIF ?><? IF Disabled ?> disabled="disabled"<? ENDIF ?> /><label for="lm_<? VAR Name ?>"> <? VAR Name ?></label></td>
+						<td class="mod_name"><input type="checkbox" name="loadmod" id="lm_<? VAR Name ?>" value="<? VAR Name ?>"<? IF Checked ?> checked="checked"<? ENDIF ?><? IF Disabled ?> disabled="disabled"<? ENDIF ?> /><label for="lm_<? VAR Name ?>"> <? IF Wiki ?> <a href="http://wiki.znc.in/<? VAR Wiki ?>"><? VAR Name ?></a> <? ELSE ?> <? VAR Name ?> <? ENDIF ?></label></td>
 						<td class="mod_args"><input type="text" name="modargs_<? VAR Name ?>" value="<? VAR Args ?>" /></td>
 						<td class="mod_descr"><? VAR Description ?></td>
 					</tr>

@@ -8,7 +8,8 @@
 
 #include "User.h"
 #include "Chan.h"
-#include "DCCSock.h"
+#include "Config.h"
+#include "FileUtils.h"
 #include "IRCSock.h"
 #include "Server.h"
 #include "znc.h"
@@ -28,14 +29,14 @@ protected:
 		vector<CClient*>& vClients = m_pUser->GetClients();
 		CIRCSock* pIRCSock = m_pUser->GetIRCSock();
 
-		if (pIRCSock && pIRCSock->GetTimeSinceLastDataTransaction() >= 180) {
+		if (pIRCSock && pIRCSock->GetTimeSinceLastDataTransaction() >= 270) {
 			pIRCSock->PutIRC("PING :ZNC");
 		}
 
 		for (size_t a = 0; a < vClients.size(); a++) {
 			CClient* pClient = vClients[a];
 
-			if (pClient->GetTimeSinceLastDataTransaction() >= 180) {
+			if (pClient->GetTimeSinceLastDataTransaction() >= 270) {
 				pClient->PutClient("PING :ZNC");
 			}
 		}
@@ -48,10 +49,14 @@ protected:
 	CUser* m_pUser;
 };
 
-CUser::CUser(const CString& sUserName) {
+CUser::CUser(const CString& sUserName)
+		: m_sUserName(sUserName), m_sCleanUserName(MakeCleanUserName(sUserName))
+{
+	// set path that depends on the user name:
+	m_sUserPath = CZNC::Get().GetUserPath() + "/" + m_sUserName;
+
 	m_pIRCSock = NULL;
 	m_fTimezoneOffset = 0;
-	SetUserName(sUserName);
 	m_sNick = m_sCleanUserName;
 	m_sIdent = m_sCleanUserName;
 	m_sRealName = sUserName;
@@ -63,9 +68,7 @@ CUser::CUser(const CString& sUserName) {
 	m_MotdBuffer.SetLineCount(200);  // This should be more than enough motd lines
 	m_QueryBuffer.SetLineCount(250);
 	m_bMultiClients = true;
-	m_bBounceDCCs = true;
 	m_eHashType = HASH_NONE;
-	m_bUseClientIP = false;
 	m_bDenyLoadMod = false;
 	m_bAdmin= false;
 	m_bIRCAway = false;
@@ -96,14 +99,236 @@ CUser::~CUser() {
 		delete m_vChans[b];
 	}
 
-	// This will cause an endless loop if the destructor doesn't remove the
-	// socket from this list / if the socket doesn't exist any more.
-	while (!m_sDCCBounces.empty())
-		CZNC::Get().GetManager().DelSockByAddr((CZNCSock*) *m_sDCCBounces.begin());
-	while (!m_sDCCSocks.empty())
-		CZNC::Get().GetManager().DelSockByAddr((CZNCSock*) *m_sDCCSocks.begin());
-
 	CZNC::Get().GetManager().DelCronByAddr(m_pUserTimer);
+}
+
+template<class T>
+struct TOption {
+	const char *name;
+	void (CUser::*pSetter)(T);
+};
+
+bool CUser::ParseConfig(CConfig* pConfig, CString& sError) {
+	TOption<const CString&> StringOptions[] = {
+		{ "nick", &CUser::SetNick },
+		{ "quitmsg", &CUser::SetQuitMsg },
+		{ "altnick", &CUser::SetAltNick },
+		{ "ident", &CUser::SetIdent },
+		{ "realname", &CUser::SetRealName },
+		{ "chanmodes", &CUser::SetDefaultChanModes },
+		{ "bindhost", &CUser::SetBindHost },
+		{ "vhost", &CUser::SetBindHost },
+		{ "dccbindhost", &CUser::SetDCCBindHost },
+		{ "dccvhost", &CUser::SetDCCBindHost },
+		{ "timestampformat", &CUser::SetTimestampFormat },
+		{ "skin", &CUser::SetSkinName },
+	};
+	size_t numStringOptions = sizeof(StringOptions) / sizeof(StringOptions[0]);
+	TOption<unsigned int> UIntOptions[] = {
+		{ "jointries", &CUser::SetJoinTries },
+		{ "maxjoins", &CUser::SetMaxJoins },
+	};
+	size_t numUIntOptions = sizeof(UIntOptions) / sizeof(UIntOptions[0]);
+	TOption<bool> BoolOptions[] = {
+		{ "keepbuffer", &CUser::SetKeepBuffer },
+		{ "multiclients", &CUser::SetMultiClients },
+		{ "denyloadmod", &CUser::SetDenyLoadMod },
+		{ "admin", &CUser::SetAdmin },
+		{ "denysetbindhost", &CUser::SetDenySetBindHost },
+		{ "denysetvhost", &CUser::SetDenySetBindHost },
+		{ "appendtimestamp", &CUser::SetTimestampAppend },
+		{ "prependtimestamp", &CUser::SetTimestampPrepend },
+		{ "ircconnectenabled", &CUser::SetIRCConnectEnabled },
+	};
+	size_t numBoolOptions = sizeof(BoolOptions) / sizeof(BoolOptions[0]);
+
+	for (size_t i = 0; i < numStringOptions; i++) {
+		CString sValue;
+		if (pConfig->FindStringEntry(StringOptions[i].name, sValue))
+			(this->*StringOptions[i].pSetter)(sValue);
+	}
+	for (size_t i = 0; i < numUIntOptions; i++) {
+		CString sValue;
+		if (pConfig->FindStringEntry(UIntOptions[i].name, sValue))
+			(this->*UIntOptions[i].pSetter)(sValue.ToUInt());
+	}
+	for (size_t i = 0; i < numBoolOptions; i++) {
+		CString sValue;
+		if (pConfig->FindStringEntry(BoolOptions[i].name, sValue))
+			(this->*BoolOptions[i].pSetter)(sValue.ToBool());
+	}
+
+	VCString vsList;
+	VCString::const_iterator vit;
+	pConfig->FindStringVector("allow", vsList);
+	for (vit = vsList.begin(); vit != vsList.end(); ++vit) {
+		AddAllowedHost(*vit);
+	}
+	pConfig->FindStringVector("ctcpreply", vsList);
+	for (vit = vsList.begin(); vit != vsList.end(); ++vit) {
+		const CString& sValue = *vit;
+		AddCTCPReply(sValue.Token(0), sValue.Token(1, true));
+	}
+	pConfig->FindStringVector("server", vsList);
+	for (vit = vsList.begin(); vit != vsList.end(); ++vit) {
+		CUtils::PrintAction("Adding Server [" + *vit + "]");
+		CUtils::PrintStatus(AddServer(*vit));
+	}
+	pConfig->FindStringVector("chan", vsList);
+	for (vit = vsList.begin(); vit != vsList.end(); ++vit) {
+		AddChan(*vit, true);
+	}
+
+	CString sValue;
+
+	CString sDCCLookupValue;
+	pConfig->FindStringEntry("dcclookupmethod", sDCCLookupValue);
+	if (pConfig->FindStringEntry("bouncedccs", sValue))  {
+		if (sValue.ToBool()) {
+			CUtils::PrintAction("Loading Module [bouncedcc]");
+			CString sModRet;
+			bool bModRet = GetModules().LoadModule("bouncedcc", "", this, sModRet);
+
+			CUtils::PrintStatus(bModRet, sModRet);
+			if (!bModRet) {
+				sError = sModRet;
+				return false;
+			}
+
+			if (sDCCLookupValue.Equals("Client")) {
+				GetModules().FindModule("bouncedcc")->SetNV("UseClientIP", "1");
+			}
+		}
+	}
+	if (pConfig->FindStringEntry("buffer", sValue))
+		SetBufferCount(sValue.ToUInt(), true);
+	if (pConfig->FindStringEntry("awaysuffix", sValue)) {
+		CUtils::PrintMessage("WARNING: AwaySuffix has been depricated, instead try -> LoadModule = awaynick %nick%_" + sValue);
+	}
+	if (pConfig->FindStringEntry("autocycle", sValue)) {
+		if (sValue.Equals("true"))
+			CUtils::PrintError("WARNING: AutoCycle has been removed, instead try -> LoadModule = autocycle");
+	}
+	if (pConfig->FindStringEntry("keepnick", sValue)) {
+		if (sValue.Equals("true"))
+			CUtils::PrintError("WARNING: KeepNick has been deprecated, instead try -> LoadModule = keepnick");
+	}
+	if (pConfig->FindStringEntry("statusprefix", sValue)) {
+		if (!SetStatusPrefix(sValue)) {
+			sError = "Invalid StatusPrefix [" + sValue + "] Must be 1-5 chars, no spaces.";
+			CUtils::PrintError(sError);
+			return false;
+		}
+	}
+	if (pConfig->FindStringEntry("timezoneoffset", sValue)) {
+		SetTimezoneOffset(sValue.ToDouble());
+	}
+	if (pConfig->FindStringEntry("timestamp", sValue)) {
+		if (!sValue.Trim_n().Equals("true")) {
+			if (sValue.Trim_n().Equals("append")) {
+				SetTimestampAppend(true);
+				SetTimestampPrepend(false);
+			} else if (sValue.Trim_n().Equals("prepend")) {
+				SetTimestampAppend(false);
+				SetTimestampPrepend(true);
+			} else if (sValue.Trim_n().Equals("false")) {
+				SetTimestampAppend(false);
+				SetTimestampPrepend(false);
+			} else {
+				SetTimestampFormat(sValue);
+			}
+		}
+	}
+	pConfig->FindStringEntry("pass", sValue);
+	// There are different formats for this available:
+	// Pass = <plain text>
+	// Pass = <md5 hash> -
+	// Pass = plain#<plain text>
+	// Pass = <hash name>#<hash>
+	// Pass = <hash name>#<salted hash>#<salt>#
+	// 'Salted hash' means hash of 'password' + 'salt'
+	// Possible hashes are md5 and sha256
+	if (sValue.Right(1) == "-") {
+		sValue.RightChomp();
+		sValue.Trim();
+		SetPass(sValue, CUser::HASH_MD5);
+	} else {
+		CString sMethod = sValue.Token(0, false, "#");
+		CString sPass = sValue.Token(1, true, "#");
+		if (sMethod == "md5" || sMethod == "sha256") {
+			CUser::eHashType type = CUser::HASH_MD5;
+			if (sMethod == "sha256")
+				type = CUser::HASH_SHA256;
+
+			CString sSalt = sPass.Token(1, false, "#");
+			sPass = sPass.Token(0, false, "#");
+			SetPass(sPass, type, sSalt);
+		} else if (sMethod == "plain") {
+			SetPass(sPass, CUser::HASH_NONE);
+		} else {
+			SetPass(sValue, CUser::HASH_NONE);
+		}
+	}
+
+	CConfig::SubConfig subConf;
+	CConfig::SubConfig::const_iterator subIt;
+	pConfig->FindSubConfig("chan", subConf);
+	for (subIt = subConf.begin(); subIt != subConf.end(); ++subIt) {
+		const CString& sChanName = subIt->first;
+		CConfig* pSubConf = subIt->second.m_pSubConfig;
+		CChan* pChan = new CChan(sChanName, this, true, pSubConf);
+
+		if (!pSubConf->empty()) {
+			sError = "Unhandled lines in config for User [" + GetUserName() + "], Channel [" + sChanName + "]!";
+			CUtils::PrintError(sError);
+
+			CZNC::DumpConfig(pSubConf);
+			return false;
+		}
+
+		// Save the channel name, because AddChan
+		// deletes the CChannel*, if adding fails
+		sError = pChan->GetName();
+		if (!AddChan(pChan)) {
+			sError = "Channel [" + sError + "] defined more than once";
+			CUtils::PrintError(sError);
+			return false;
+		}
+		sError.clear();
+	}
+
+	pConfig->FindStringVector("loadmodule", vsList);
+	for (vit = vsList.begin(); vit != vsList.end(); ++vit) {
+		sValue = *vit;
+		CString sModName = sValue.Token(0);
+
+		// XXX Legacy crap, added in znc 0.089
+		if (sModName == "discon_kick") {
+			CUtils::PrintMessage("NOTICE: [discon_kick] was renamed, loading [disconkick] instead");
+			sModName = "disconkick";
+		}
+
+		// XXX Legacy crap, added in znc 0.099
+		if (sModName == "fixfreenode") {
+			CUtils::PrintMessage("NOTICE: [fixfreenode] doesn't do anything useful anymore, ignoring it");
+			continue;
+		}
+
+		CUtils::PrintAction("Loading Module [" + sModName + "]");
+		CString sModRet;
+		CString sArgs = sValue.Token(1, true);
+
+		bool bModRet = GetModules().LoadModule(sModName, sArgs, this, sModRet);
+
+		CUtils::PrintStatus(bModRet, sModRet);
+		if (!bModRet) {
+			sError = sModRet;
+			return false;
+		}
+		continue;
+	}
+
+	return true;
 }
 
 void CUser::DelModules() {
@@ -163,14 +388,7 @@ void CUser::SetIRCSocket(CIRCSock* pIRCSock) {
 bool CUser::IsIRCConnected() const
 {
 	const CIRCSock* pSock = GetIRCSock();
-
-	if (!pSock)
-		return false;
-
-	if (!pSock->IsConnected())
-		return false;
-
-	return true;
+	return (pSock && pSock->IsConnected());
 }
 
 void CUser::IRCDisconnected() {
@@ -343,13 +561,11 @@ bool CUser::Clone(const CUser& User, CString& sErrorRet, bool bCloneChans) {
 		return false;
 	}
 
+	// user names can only specified for the constructor, changing it later
+	// on breaks too much stuff (e.g. lots of paths depend on the user name)
 	if (GetUserName() != User.GetUserName()) {
-		if (CZNC::Get().FindUser(User.GetUserName())) {
-			sErrorRet = "New username already exists";
-			return false;
-		}
-
-		SetUserName(User.GetUserName());
+		DEBUG("Ignoring username in CUser::Clone(), old username [" << GetUserName()
+				<< "]; New username [" << User.GetUserName() << "]");
 	}
 
 	if (!User.GetPass().empty()) {
@@ -460,8 +676,6 @@ bool CUser::Clone(const CUser& User, CString& sErrorRet, bool bCloneChans) {
 	SetIRCConnectEnabled(User.GetIRCConnectEnabled());
 	SetKeepBuffer(User.KeepBuffer());
 	SetMultiClients(User.MultiClients());
-	SetBounceDCCs(User.BounceDCCs());
-	SetUseClientIP(User.UseClientIP());
 	SetDenyLoadMod(User.DenyLoadMod());
 	SetAdmin(User.IsAdmin());
 	SetDenySetBindHost(User.DenySetBindHost());
@@ -534,6 +748,7 @@ bool CUser::GetTimestampAppend() const { return m_bAppendTimestamp; }
 bool CUser::GetTimestampPrepend() const { return m_bPrependTimestamp; }
 
 bool CUser::IsValidUserName(const CString& sUserName) {
+	// /^[a-zA-Z][a-zA-Z@._\-]*$/
 	const char* p = sUserName.c_str();
 
 	if (sUserName.empty()) {
@@ -627,9 +842,7 @@ bool CUser::PrintLine(CFile& File, CString sName, CString sValue) const {
 	// FirstLine() so that no one can inject new lines to the config if he
 	// manages to add "\n" to e.g. sValue.
 	CString sLine = "\t" + sName.FirstLine() + " = " + sValue.FirstLine() + "\n";
-	if (File.Write(sLine) <= 0)
-		return false;
-	return true;
+	return (File.Write(sLine) > 0);
 }
 
 bool CUser::WriteConfig(CFile& File) {
@@ -661,11 +874,9 @@ bool CUser::WriteConfig(CFile& File) {
 	PrintLine(File, "Buffer", CString(GetBufferCount()));
 	PrintLine(File, "KeepBuffer", CString(KeepBuffer()));
 	PrintLine(File, "MultiClients", CString(MultiClients()));
-	PrintLine(File, "BounceDCCs", CString(BounceDCCs()));
 	PrintLine(File, "DenyLoadMod", CString(DenyLoadMod()));
 	PrintLine(File, "Admin", CString(IsAdmin()));
 	PrintLine(File, "DenySetBindHost", CString(DenySetBindHost()));
-	PrintLine(File, "DCCLookupMethod", CString((UseClientIP()) ? "client" : "default"));
 	PrintLine(File, "TimestampFormat", GetTimestampFormat());
 	PrintLine(File, "AppendTimestamp", CString(GetTimestampAppend()));
 	PrintLine(File, "PrependTimestamp", CString(GetTimestampPrepend()));
@@ -725,8 +936,6 @@ bool CUser::WriteConfig(CFile& File) {
 			}
 		}
 	}
-
-	MODULECALL(OnWriteUserConfig(File), this, NULL, NOTHING);
 
 	File.Write("</User>\n");
 
@@ -1104,72 +1313,18 @@ bool CUser::PutModule(const CString& sModule, const CString& sLine, CClient* pCl
 	return (pClient == NULL);
 }
 
-bool CUser::ResumeFile(unsigned short uPort, unsigned long uFileSize) {
-	CSockManager& Manager = CZNC::Get().GetManager();
+bool CUser::PutModNotice(const CString& sModule, const CString& sLine, CClient* pClient, CClient* pSkipClient) {
+	for (unsigned int a = 0; a < m_vClients.size(); a++) {
+		if ((!pClient || pClient == m_vClients[a]) && pSkipClient != m_vClients[a]) {
+			m_vClients[a]->PutModNotice(sModule, sLine);
 
-	for (unsigned int a = 0; a < Manager.size(); a++) {
-		if (Manager[a]->GetSockName().Equals("DCC::LISTEN::", false, 13)) {
-			CDCCSock* pSock = (CDCCSock*) Manager[a];
-
-			if (pSock->GetLocalPort() == uPort) {
-				if (pSock->Seek(uFileSize)) {
-					PutModule(pSock->GetModuleName(), "DCC -> [" + pSock->GetRemoteNick() + "][" + pSock->GetFileName() + "] - Attempting to resume from file position [" + CString(uFileSize) + "]");
-					return true;
-				} else {
-					return false;
-				}
+			if (pClient) {
+				return true;
 			}
 		}
 	}
 
-	return false;
-}
-
-bool CUser::SendFile(const CString& sRemoteNick, const CString& sFileName, const CString& sModuleName) {
-	CString sFullPath = CDir::ChangeDir(GetDLPath(), sFileName, CZNC::Get().GetHomePath());
-	CDCCSock* pSock = new CDCCSock(this, sRemoteNick, sFullPath, sModuleName);
-
-	CFile* pFile = pSock->OpenFile(false);
-
-	if (!pFile) {
-		delete pSock;
-		return false;
-	}
-
-	unsigned short uPort = CZNC::Get().GetManager().ListenRand("DCC::LISTEN::" + sRemoteNick, GetLocalDCCIP(), false, SOMAXCONN, pSock, 120);
-
-	if (GetNick().Equals(sRemoteNick)) {
-		PutUser(":" + GetStatusPrefix() + "status!znc@znc.in PRIVMSG " + sRemoteNick + " :\001DCC SEND " + pFile->GetShortName() + " " + CString(CUtils::GetLongIP(GetLocalDCCIP())) + " "
-				+ CString(uPort) + " " + CString(pFile->GetSize()) + "\001");
-	} else {
-		PutIRC("PRIVMSG " + sRemoteNick + " :\001DCC SEND " + pFile->GetShortName() + " " + CString(CUtils::GetLongIP(GetLocalDCCIP())) + " "
-			    + CString(uPort) + " " + CString(pFile->GetSize()) + "\001");
-	}
-
-	PutModule(sModuleName, "DCC -> [" + sRemoteNick + "][" + pFile->GetShortName() + "] - Attempting Send.");
-	return true;
-}
-
-bool CUser::GetFile(const CString& sRemoteNick, const CString& sRemoteIP, unsigned short uRemotePort, const CString& sFileName, unsigned long uFileSize, const CString& sModuleName) {
-	if (CFile::Exists(sFileName)) {
-		PutModule(sModuleName, "DCC <- [" + sRemoteNick + "][" + sFileName + "] - File already exists.");
-		return false;
-	}
-
-	CDCCSock* pSock = new CDCCSock(this, sRemoteNick, sRemoteIP, uRemotePort, sFileName, uFileSize, sModuleName);
-
-	if (!pSock->OpenFile()) {
-		delete pSock;
-		return false;
-	}
-
-	if (!CZNC::Get().GetManager().Connect(sRemoteIP, uRemotePort, "DCC::GET::" + sRemoteNick, 60, false, GetLocalDCCIP(), pSock)) {
-		PutModule(sModuleName, "DCC <- [" + sRemoteNick + "][" + sFileName + "] - Unable to connect.");
-		return false;
-	}
-
-	PutModule(sModuleName, "DCC <- [" + sRemoteNick + "][" + sFileName + "] - Attempting to connect to [" + sRemoteIP + "]");
-	return true;
+	return (pClient == NULL);
 }
 
 CString CUser::GetCurNick() const {
@@ -1191,15 +1346,6 @@ CString CUser::MakeCleanUserName(const CString& sUserName) {
 }
 
 // Setters
-void CUser::SetUserName(const CString& s) {
-	m_sCleanUserName = CUser::MakeCleanUserName(s);
-	m_sUserName = s;
-
-	// set paths that depend on the user name:
-	m_sUserPath = CZNC::Get().GetUserPath() + "/" + m_sUserName;
-	m_sDLPath = GetUserPath() + "/downloads";
-}
-
 bool CUser::IsChan(const CString& sChan) const {
 	if (sChan.empty())
 		return false; // There is no way this is a chan
@@ -1221,8 +1367,6 @@ void CUser::SetPass(const CString& s, eHashType eHash, const CString& sSalt) {
 	m_sPassSalt = sSalt;
 }
 void CUser::SetMultiClients(bool b) { m_bMultiClients = b; }
-void CUser::SetBounceDCCs(bool b) { m_bBounceDCCs = b; }
-void CUser::SetUseClientIP(bool b) { m_bUseClientIP = b; }
 void CUser::SetDenyLoadMod(bool b) { m_bDenyLoadMod = b; }
 void CUser::SetAdmin(bool b) { m_bAdmin = b; }
 void CUser::SetDenySetBindHost(bool b) { m_bDenySetBindHost = b; }
@@ -1253,12 +1397,20 @@ void CUser::SetIRCNick(const CNick& n) {
 }
 
 bool CUser::AddCTCPReply(const CString& sCTCP, const CString& sReply) {
+	// Reject CTCP requests containing spaces
+	if (sCTCP.find_first_of(' ') != CString::npos) {
+		return false;
+	}
+	// Reject empty CTCP requests
 	if (sCTCP.empty()) {
 		return false;
 	}
-
 	m_mssCTCPReplies[sCTCP.AsUpper()] = sReply;
 	return true;
+}
+
+bool CUser::DelCTCPReply(const CString& sCTCP) {
+	return m_mssCTCPReplies.erase(sCTCP) > 0;
 }
 
 bool CUser::SetStatusPrefix(const CString& s) {
@@ -1284,12 +1436,10 @@ const CString& CUser::GetPass() const { return m_sPass; }
 CUser::eHashType CUser::GetPassHashType() const { return m_eHashType; }
 const CString& CUser::GetPassSalt() const { return m_sPassSalt; }
 
-bool CUser::UseClientIP() const { return m_bUseClientIP; }
 bool CUser::DenyLoadMod() const { return m_bDenyLoadMod; }
 bool CUser::IsAdmin() const { return m_bAdmin; }
 bool CUser::DenySetBindHost() const { return m_bDenySetBindHost; }
 bool CUser::MultiClients() const { return m_bMultiClients; }
-bool CUser::BounceDCCs() const { return m_bBounceDCCs; }
 const CString& CUser::GetStatusPrefix() const { return m_sStatusPrefix; }
 const CString& CUser::GetDefaultChanModes() const { return m_sDefaultChanModes; }
 const vector<CChan*>& CUser::GetChans() const { return m_vChans; }
@@ -1302,4 +1452,5 @@ unsigned int CUser::GetBufferCount() const { return m_uBufferCount; }
 bool CUser::KeepBuffer() const { return m_bKeepBuffer; }
 //CString CUser::GetSkinName() const { return (!m_sSkinName.empty()) ? m_sSkinName : CZNC::Get().GetSkinName(); }
 CString CUser::GetSkinName() const { return m_sSkinName; }
+const CString& CUser::GetUserPath() const { if (!CFile::Exists(m_sUserPath)) { CDir::MakeDir(m_sUserPath); } return m_sUserPath; }
 // !Getters

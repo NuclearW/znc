@@ -34,8 +34,7 @@
 
 #ifndef _HAS_CSOCKET_
 #define _HAS_CSOCKET_
-
-#include "zncconfig.h"
+#include "defines.h" // require this as a general rule, most projects have a defines.h or the like
 
 #include <stdio.h>
 #include <unistd.h>
@@ -92,8 +91,6 @@
 #include <string>
 #include <set>
 #include <map>
-
-#include "defines.h" // require this as a general rule, most projects have a defines.h or the like
 
 #ifndef CS_STRING
 #	ifdef _HAS_CSTRING_
@@ -191,22 +188,14 @@ public:
 	void SinFamily()
 	{
 #ifdef HAVE_IPV6
-		if( m_bIsIPv6 )
-		{
-			m_saddr6.sin6_family = PF_INET6;
-			return;
-		}
+		m_saddr6.sin6_family = PF_INET6;
 #endif /* HAVE_IPV6 */
 		m_saddr.sin_family = PF_INET;
 	}
 	void SinPort( u_short iPort )
 	{
 #ifdef HAVE_IPV6
-		if( m_bIsIPv6 )
-		{
-			m_saddr6.sin6_port = htons( iPort );
-			return;
-		}
+		m_saddr6.sin6_port = htons( iPort );
 #endif /* HAVE_IPV6 */
 		m_saddr.sin_port = htons( iPort );
 	}
@@ -921,6 +910,23 @@ public:
 	}
 	time_t GetLastCheckTimeout() { return( m_iLastCheckTimeoutTime ); }
 
+	//! Returns the time when CheckTimeout() should be called next
+	time_t GetNextCheckTimeout( time_t iNow = 0 ) 
+	{
+		if( iNow == 0 )
+			iNow = time( NULL );
+		time_t itimeout = m_itimeout;
+		time_t iDiff = iNow - m_iLastCheckTimeoutTime;
+		/* CheckTimeout() wants to be called after half the timeout */
+		if( m_iTcount == 0 )
+			itimeout /= 2;
+		if( iDiff > itimeout )
+			itimeout = 0;
+		else
+			itimeout -= iDiff;
+		return( iNow + itimeout );
+	}
+
 	//! return the data imediatly ready for read
 	virtual int GetPending();
 
@@ -1437,7 +1443,7 @@ public:
 			{
 				if ( !pcSock->SetupVHost() )
 				{
-					pcSock->SockError( errno );
+					pcSock->SockError( GetSockError() );
 					DelSock( a-- );
 					continue;
 				}
@@ -1569,6 +1575,7 @@ public:
 			}
 
 			case SELECT_TIMEOUT:
+			case SELECT_TRYAGAIN:
 			case SELECT_ERROR:
 			default	:
 				break;
@@ -1630,7 +1637,7 @@ public:
 	virtual void AddSock( T *pcSock, const CS_STRING & sSockName )
 	{
 		pcSock->SetSockName( sSockName );
-		push_back( pcSock );
+		this->push_back( pcSock );
 	}
 
 	//! returns a pointer to the FIRST sock found by port or NULL on no match
@@ -1988,7 +1995,6 @@ private:
 		if ( m_iSelectWait == 0 )
 			iQuickReset = 0;
 
-		bool bHasWriteable = false;
 		bool bHasAvailSocks = false;
 		unsigned long long iNOW = 0;
 		for( unsigned int i = 0; i < this->size(); i++ )
@@ -2029,7 +2035,6 @@ private:
 					FDSetCheck( aiAresSocks[0], miiReadyFds, eCheckWrite );
 				// let ares drop the timeout if it has something timing out sooner then whats in tv currently
 				ares_timeout( pChannel, &tv, &tv );
-				bHasWriteable = true;
 			}
 #endif /* HAVE_C_ARES */
 
@@ -2050,41 +2055,44 @@ private:
 				continue;	// invalid sock fd
 			}
 
-			if ( pcSock->GetType() != T::LISTENER )
+			if( pcSock->GetType() != T::LISTENER )
 			{
-				if ( ( pcSock->IsConnected() ) && ( pcSock->GetWriteBuffer().empty() ) )
-				{
-					if ( !bIsReadPaused )
-						FDSetCheck( iRSock, miiReadyFds, eCheckRead );
+				bool bHasWriteBuffer = !pcSock->GetWriteBuffer().empty();
 
-				} else if ( ( pcSock->GetSSL() ) && ( !pcSock->SslIsEstablished() ) && ( !pcSock->GetWriteBuffer().empty() ) )
-				{
+				if ( !bIsReadPaused )
+					FDSetCheck( iRSock, miiReadyFds, eCheckRead );
+
+				if( pcSock->AllowWrite( iNOW ) && ( !pcSock->IsConnected() || bHasWriteBuffer ) )
+				{ 
+					if( !pcSock->IsConnected() )
+					{ // set the write bit if not connected yet
+						FDSetCheck( iWSock, miiReadyFds, eCheckWrite );
+					}
+					else if( bHasWriteBuffer && !pcSock->GetSSL() )
+					{ // always set the write bit if there is data to send when NOT ssl
+						FDSetCheck( iWSock, miiReadyFds, eCheckWrite );
+					}
+					else if( bHasWriteBuffer && pcSock->GetSSL() && pcSock->SslIsEstablished() )
+					{ // ONLY set the write bit if there is data to send and the SSL handshake is finished
+						FDSetCheck( iWSock, miiReadyFds, eCheckWrite );
+					}
+				}
+
+				if( pcSock->GetSSL() && !pcSock->SslIsEstablished() && bHasWriteBuffer )
+				{ // if this is an unestabled SSL session with data to send ... try sending it
 					// do this here, cause otherwise ssl will cause a small
 					// cpu spike waiting for the handshake to finish
-					FDSetCheck( iRSock, miiReadyFds, eCheckRead );
 					// resend this data
 					if ( !pcSock->Write( "" ) )
 					{
 						pcSock->Close();
 					}
-					if( !pcSock->GetWriteBuffer().empty() )
-					{ // this means we need to write again, not everything got knocked out
-						FDSetCheck( iWSock, miiReadyFds, eCheckWrite );
-						bHasWriteable = true;
-					}
-
-				} else
-				{
-					if ( !bIsReadPaused )
-						FDSetCheck( iRSock, miiReadyFds, eCheckRead );
-
-					if( pcSock->AllowWrite( iNOW ) )
-					{
-						FDSetCheck( iWSock, miiReadyFds, eCheckWrite );
-						bHasWriteable = true;
-					}
-				}
-
+					// warning ... setting write bit in here causes massive CPU spinning on invalid SSL servers
+					// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=631590
+					// however, we can set the select WAY down and it will retry quickly, but keep it from spinning at 100%
+					tv.tv_usec = iQuickReset;
+					tv.tv_sec = 0;
+				} 
 			} 
 			else
 			{
@@ -2101,12 +2109,12 @@ private:
 		// old fashion select, go fer it
 		int iSel;
 
-		if ( !mpeSocks.empty() ) // .1 ms pause to see if anything else is ready (IE if there is SSL data pending, don't wait too long)
+		if( !mpeSocks.empty() ) // .1 ms pause to see if anything else is ready (IE if there is SSL data pending, don't wait too long)
 		{
 			tv.tv_usec = iQuickReset;
 			tv.tv_sec = 0;
 		}
-		else if ( ( !this->empty() ) && ( !bHasAvailSocks ) )
+		else if ( !this->empty() && !bHasAvailSocks )
 		{
 			tv.tv_usec = iQuickReset;
 			tv.tv_sec = 0;
@@ -2285,7 +2293,6 @@ private:
 	time_t GetDynamicSleepTime( time_t iNow, time_t iMaxResolution = 3600 ) const
 	{
 		time_t iNextRunTime = iNow + iMaxResolution;
-		time_t iMinTimeout = iMaxResolution;
 		typename std::vector<T *>::const_iterator it;
 		// This is safe, because we don't modify the vector.
 		typename std::vector<T *>::const_iterator it_end = this->end();
@@ -2295,19 +2302,13 @@ private:
 			T* pSock = *it;
 
 			if( pSock->GetConState() != T::CST_OK )
-				iMinTimeout = 0; // this is in a nebulous state, need to let it proceed like normal
+				iNextRunTime = iNow; // this is in a nebulous state, need to let it proceed like normal
 
 			time_t iTimeoutInSeconds = pSock->GetTimeout();
 			if( iTimeoutInSeconds > 0 )
 			{
-				time_t iLastTimeData = pSock->GetLastCheckTimeout();
-				time_t iDiff = iNow - iLastTimeData;
-				if( iDiff > iTimeoutInSeconds )
-					iTimeoutInSeconds = 0;
-				else
-					iTimeoutInSeconds -= iDiff;
-
-				iMinTimeout = std::min( iMinTimeout, iTimeoutInSeconds );
+				time_t iNextTimeout = pSock->GetNextCheckTimeout( iNow );
+				iNextRunTime = std::min( iNextRunTime, iNextTimeout );
 			}
 
 			const std::vector<CCron *> & vCrons = pSock->GetCrons();
@@ -2323,7 +2324,7 @@ private:
 
 		if( iNextRunTime < iNow )
 			return( 0 ); // smallest unit possible
-		return( std::min( iNextRunTime - iNow, iMinTimeout ) );
+		return( std::min( iNextRunTime - iNow, iMaxResolution ) );
 	}
 
 	//! internal use only

@@ -6,8 +6,10 @@
  * by the Free Software Foundation.
  */
 
+#include "FileUtils.h"
 #include "User.h"
 #include "znc.h"
+#include "ExecSock.h"
 
 // Forward Declaration
 class CShellMod;
@@ -83,75 +85,16 @@ public:
 			}
 
 			PutShell("znc$");
-		} else if (sCommand.Equals("SEND")) {
-			CString sToNick = sLine.Token(1);
-			CString sFile = sLine.Token(2);
-
-			if ((sToNick.empty()) || (sFile.empty())) {
-				PutShell("usage: Send <nick> <file>");
-			} else {
-				sFile = CDir::ChangeDir(m_sPath, sFile, CZNC::Get().GetHomePath());
-
-				if (!CFile::Exists(sFile)) {
-					PutShell("get: no such file [" + sFile + "]");
-				} else if (!CFile::IsReg(sFile)) {
-					PutShell("get: not a file [" + sFile + "]");
-				} else {
-					m_pUser->SendFile(sToNick, sFile, GetModName());
-				}
-			}
-		} else if (sCommand.Equals("GET")) {
-			CString sFile = sLine.Token(1);
-
-			if (sFile.empty()) {
-				PutShell("usage: Get <file>");
-			} else {
-				sFile = CDir::ChangeDir(m_sPath, sFile, CZNC::Get().GetHomePath());
-
-				if (!CFile::Exists(sFile)) {
-					PutShell("get: no such file [" + sFile + "]");
-				} else if (!CFile::IsReg(sFile)) {
-					PutShell("get: not a file [" + sFile + "]");
-				} else {
-					m_pUser->SendFile(m_pUser->GetCurNick(), sFile, GetModName());
-				}
-			}
 		} else {
 			RunCommand(sLine);
 		}
 	}
 
-	virtual EModRet OnStatusCommand(CString& sCommand) {
-		if (sCommand.Equals("SHELL")) {
-			PutShell("-- ZNC Shell Service --");
-			return HALT;
-		}
-
-		return CONTINUE;
-	}
-
-	virtual EModRet OnDCCUserSend(const CNick& RemoteNick, unsigned long uLongIP, unsigned short uPort, const CString& sFile, unsigned long uFileSize) {
-		if (RemoteNick.GetNick().Equals(GetModNick())) {
-			CString sLocalFile = CDir::ChangeDir(m_sPath, sFile, CZNC::Get().GetHomePath());
-
-			m_pUser->GetFile(m_pUser->GetCurNick(), CUtils::GetIP(uLongIP), uPort, sLocalFile, uFileSize, GetModName());
-
-			return HALT;
-		}
-
-		return CONTINUE;
-	}
-
-	void PutShell(const CString& sLine) {
-		CString sPath = m_sPath;
-
-		CString::size_type a = sPath.find(' ');
-		while (a != CString::npos) {
-			sPath.replace(a, 1, "_");
-			a = sPath.find(' ');
-		}
-
-		PutModule(sLine, "shell", sPath);
+	void PutShell(const CString& sMsg) {
+		CString sPath = m_sPath.Replace_n(" ", "_");
+		CString sSource = ":" + GetModNick() + "!shell@" + sPath;
+		CString sLine = sSource + " PRIVMSG " + m_pUser->GetCurNick() + " :" + sMsg;
+		PutUser(sLine);
 	}
 
 	void RunCommand(const CString& sCommand) {

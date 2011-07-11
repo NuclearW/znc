@@ -6,9 +6,10 @@
  * by the Free Software Foundation.
  */
 
-#include "User.h"
 #include "Client.h"
+#include "FileUtils.h"
 #include "Server.h"
+#include "User.h"
 
 #include <syslog.h>
 
@@ -161,5 +162,9 @@ private:
 	LogMode m_eLogMode;
 	CString m_sLogFile;
 };
+
+template<> void TModInfo<CAdminLogMod>(CModInfo& Info) {
+	Info.SetWikiPage("adminlog");
+}
 
 GLOBALMODULEDEFS(CAdminLogMod, "Log ZNC events to file and/or syslog.")

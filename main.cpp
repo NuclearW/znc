@@ -7,8 +7,29 @@
  */
 
 #include "znc.h"
-#include <getopt.h>
+#include "FileUtils.h"
 #include <sys/wait.h>
+#include <signal.h>
+
+#ifdef HAVE_GETOPT_LONG
+#include <getopt.h>
+#else
+#define no_argument 0
+#define required_argument 1
+#define optional_argument 2
+
+struct option {
+	const char *a;
+	int opt;
+	int *flag;
+	int val;
+};
+
+static inline int getopt_long(int argc, char * const argv[], const char *optstring, const struct option *, int *)
+{
+	return getopt(argc, argv, optstring);
+}
+#endif
 
 static const struct option g_LongOpts[] = {
 	{ "help",        no_argument,       0, 'h' },
@@ -19,9 +40,7 @@ static const struct option g_LongOpts[] = {
 	{ "allow-root",  no_argument,       0, 'r' },
 	{ "makeconf",    no_argument,       0, 'c' },
 	{ "makepass",    no_argument,       0, 's' },
-#ifdef HAVE_LIBSSL
 	{ "makepem",     no_argument,       0, 'p' },
-#endif /* HAVE_LIBSSL */
 	{ "datadir",     required_argument, 0, 'd' },
 	{ 0, 0, 0, 0 }
 };
@@ -69,10 +88,7 @@ static void signalHandler(int sig) {
 
 static bool isRoot() {
 	// User root? If one of these were root, we could switch the others to root, too
-	if (geteuid() == 0 || getuid() == 0)
-		return true;
-
-	return false;
+	return (geteuid() == 0 || getuid() == 0);
 }
 
 static void seedPRNG() {
@@ -101,23 +117,21 @@ int main(int argc, char** argv) {
 	CString sDataDir = "";
 
 	seedPRNG();
-	CUtils::SetStdoutIsTTY(isatty(1));
+	CDebug::SetStdoutIsTTY(isatty(1));
 
 	int iArg, iOptIndex = -1;
 	bool bMakeConf = false;
 	bool bMakePass = false;
 	bool bAllowRoot = false;
 	bool bForeground = false;
-#ifdef _DEBUG
+#ifdef ALWAYS_RUN_IN_FOREGROUND
 	bForeground = true;
 #endif
 #ifdef HAVE_LIBSSL
 	bool bMakePem = false;
+#endif
 
 	while ((iArg = getopt_long(argc, argv, "hvnrcspd:Df", g_LongOpts, &iOptIndex)) != -1) {
-#else
-	while ((iArg = getopt_long(argc, argv, "hvnrcsd:Df", g_LongOpts, &iOptIndex)) != -1) {
-#endif /* HAVE_LIBSSL */
 		switch (iArg) {
 		case 'h':
 			GenerateHelp(argv[0]);
@@ -126,7 +140,7 @@ int main(int argc, char** argv) {
 			cout << CZNC::GetTag() << endl;
 			return 0;
 		case 'n':
-			CUtils::SetStdoutIsTTY(false);
+			CDebug::SetStdoutIsTTY(false);
 			break;
 		case 'r':
 			bAllowRoot = true;
@@ -137,10 +151,13 @@ int main(int argc, char** argv) {
 		case 's':
 			bMakePass = true;
 			break;
-#ifdef HAVE_LIBSSL
 		case 'p':
+#ifdef HAVE_LIBSSL
 			bMakePem = true;
 			break;
+#else
+			CUtils::PrintError("ZNC is compiled without SSL support.");
+			return 1;
 #endif /* HAVE_LIBSSL */
 		case 'd':
 			sDataDir = CString(optarg);
@@ -150,7 +167,7 @@ int main(int argc, char** argv) {
 			break;
 		case 'D':
 			bForeground = true;
-			CUtils::SetDebug(true);
+			CDebug::SetDebug(true);
 			break;
 		case '?':
 		default:
@@ -269,7 +286,7 @@ int main(int argc, char** argv) {
 		close(1); open("/dev/null", O_WRONLY);
 		close(2); open("/dev/null", O_WRONLY);
 
-		CUtils::SetStdoutIsTTY(false);
+		CDebug::SetStdoutIsTTY(false);
 
 		// We are the child. There is no way we can be a process group
 		// leader, thus setsid() must succeed.
@@ -318,11 +335,11 @@ int main(int argc, char** argv) {
 					NULL
 				};
 				int pos = 3;
-				if (CUtils::Debug())
+				if (CDebug::Debug())
 					args[pos++] = strdup("--debug");
 				else if (bForeground)
 					args[pos++] = strdup("--foreground");
-				if (!CUtils::StdoutIsTTY())
+				if (!CDebug::StdoutIsTTY())
 					args[pos++] = strdup("--no-color");
 				if (bAllowRoot)
 					args[pos++] = strdup("--allow-root");

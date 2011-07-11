@@ -29,9 +29,9 @@
 #include "../znc.h"
 #include "../Server.h"
 #include "../ZNCString.h"
-#include "../DCCBounce.h"
-#include "../DCCSock.h"
 #include "../FileUtils.h"
+#include "../ZNCDebug.h"
+#include "../ExecSock.h"
 #include "modperl/module.h"
 #define stat struct stat
 %}
@@ -77,8 +77,6 @@ namespace std {
 %include "../Csocket.h"
 %template(ZNCSocketManager) TSocketManager<CZNCSock>;
 %include "../Socket.h"
-%include "../DCCBounce.h"
-%include "../DCCSock.h"
 %include "../FileUtils.h"
 %include "../Modules.h"
 %include "../Nick.h"
@@ -92,6 +90,8 @@ namespace std {
 %include "../WebModules.h"
 %include "../znc.h"
 %include "../Server.h"
+%include "../ZNCDebug.h"
+%include "../ExecSock.h"
 
 %include "modperl/module.h"
 

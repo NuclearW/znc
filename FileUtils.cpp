@@ -7,12 +7,15 @@
  */
 
 #include "FileUtils.h"
-#include "znc.h"
+#include "ExecSock.h"
 #include "Utils.h"
+#include "ZNCDebug.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <pwd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <fcntl.h>
 
 #ifndef HAVE_LSTAT
 #  define lstat(a, b)	stat(a, b)
@@ -22,13 +25,17 @@
 #  define O_BINARY	0
 #endif
 
+CString CFile::m_sHomePath;
+
 CFile::CFile() {
 	m_iFD = -1;
+	ResetError();
 }
 
 CFile::CFile(const CString& sLongName) {
 	m_iFD = -1;
 
+	ResetError();
 	SetFileName(sLongName);
 }
 
@@ -37,7 +44,10 @@ CFile::~CFile() {
 }
 
 void CFile::SetFileName(const CString& sLongName) {
-	m_sLongName = sLongName;
+	if (sLongName.Left(2) == "~/") {
+		m_sLongName = CFile::GetHomePath() + sLongName.substr(1);
+	} else
+		m_sLongName = sLongName;
 
 	m_sShortName = sLongName;
 	m_sShortName.TrimRight("/");
@@ -162,13 +172,25 @@ int CFile::GetInfo(const CString& sFile, struct stat& st) {
 //
 // Functions to manipulate the file on the filesystem
 //
-bool CFile::Delete() { return CFile::Delete(m_sLongName); }
+bool CFile::Delete() {
+	if (CFile::Delete(m_sLongName))
+		return true;
+	m_bHadError = true;
+	return false;
+}
+
 bool CFile::Move(const CString& sNewFileName, bool bOverwrite) {
-	return CFile::Move(m_sLongName, sNewFileName, bOverwrite);
+	if (CFile::Move(m_sLongName, sNewFileName, bOverwrite))
+		return true;
+	m_bHadError = true;
+	return false;
 }
 
 bool CFile::Copy(const CString& sNewFileName, bool bOverwrite) {
-	return CFile::Copy(m_sLongName, sNewFileName, bOverwrite);
+	if (CFile::Copy(m_sLongName, sNewFileName, bOverwrite))
+		return true;
+	m_bHadError = true;
+	return false;
 }
 
 bool CFile::Delete(const CString& sFileName) {
@@ -230,7 +252,11 @@ bool CFile::Chmod(mode_t mode) {
 	if (m_iFD == -1) {
 		return false;
 	}
-	return (fchmod(m_iFD, mode) == 0);
+	if (fchmod(m_iFD, mode) != 0) {
+		m_bHadError = true;
+		return false;
+	}
+	return true;
 }
 
 bool CFile::Chmod(const CString& sFile, mode_t mode) {
@@ -243,6 +269,8 @@ bool CFile::Seek(off_t uPos) {
 		return true;
 	}
 
+	m_bHadError = true;
+
 	return false;
 }
 
@@ -252,14 +280,15 @@ bool CFile::Truncate() {
 		return true;
 	}
 
+	m_bHadError = true;
+
 	return false;
 }
 
 bool CFile::Sync() {
-	if (m_iFD != -1 && fsync(m_iFD) == 0) {
+	if (m_iFD != -1 && fsync(m_iFD) == 0)
 		return true;
-	}
-
+	m_bHadError = true;
 	return false;
 }
 
@@ -270,6 +299,7 @@ bool CFile::Open(const CString& sFileName, int iFlags, mode_t iMode) {
 
 bool CFile::Open(int iFlags, mode_t iMode) {
 	if (m_iFD != -1) {
+		m_bHadError = true;
 		return false;
 	}
 
@@ -281,8 +311,10 @@ bool CFile::Open(int iFlags, mode_t iMode) {
 	iMode |= O_BINARY;
 
 	m_iFD = open(m_sLongName.c_str(), iFlags, iMode);
-	if (m_iFD < 0)
+	if (m_iFD < 0) {
+		m_bHadError = true;
 		return false;
+	}
 
 	/* Make sure this FD isn't given to childs */
 	SetFdCloseOnExec(m_iFD);
@@ -295,7 +327,10 @@ int CFile::Read(char *pszBuffer, int iBytes) {
 		return -1;
 	}
 
-	return read(m_iFD, pszBuffer, iBytes);
+	int res = read(m_iFD, pszBuffer, iBytes);
+	if (res != iBytes)
+		m_bHadError = true;
+	return res;
 }
 
 bool CFile::ReadLine(CString& sData, const CString & sDelimiter) {
@@ -365,7 +400,10 @@ int CFile::Write(const char *pszBuffer, u_int iBytes) {
 		return -1;
 	}
 
-	return write(m_iFD, pszBuffer, iBytes);
+	u_int res = write(m_iFD, pszBuffer, iBytes);
+	if (res != iBytes)
+		m_bHadError = true;
+	return res;
 }
 
 int CFile::Write(const CString & sData) {
@@ -374,6 +412,7 @@ int CFile::Write(const CString & sData) {
 void CFile::Close() {
 	if (m_iFD >= 0) {
 		if (close(m_iFD) < 0) {
+			m_bHadError = true;
 			DEBUG("CFile::Close(): close() failed with ["
 					<< strerror(errno) << "]");
 		}
@@ -411,11 +450,7 @@ bool CFile::Lock(int iType, bool bBlocking) {
 	fl.l_whence = SEEK_SET;
 	fl.l_start  = 0;
 	fl.l_len    = 0;
-	if (fcntl(m_iFD, (bBlocking ? F_SETLKW : F_SETLK), &fl) == -1) {
-		return false;
-	} else {
-		return true;
-	}
+	return (fcntl(m_iFD, (bBlocking ? F_SETLKW : F_SETLK), &fl) != -1);
 }
 
 bool CFile::IsOpen() const { return (m_iFD != -1); }
@@ -431,11 +466,32 @@ CString CFile::GetDir() const {
 	return sDir;
 }
 
+void CFile::InitHomePath(const CString& sFallback) {
+	const char *home = getenv("HOME");
+
+	m_sHomePath.clear();
+	if (home) {
+		m_sHomePath = home;
+	}
+
+	if (m_sHomePath.empty()) {
+		const struct passwd* pUserInfo = getpwuid(getuid());
+
+		if (pUserInfo) {
+			m_sHomePath = pUserInfo->pw_dir;
+		}
+	}
+
+	if (m_sHomePath.empty()) {
+		m_sHomePath = sFallback;
+	}
+}
+
 CString CDir::ChangeDir(const CString& sPath, const CString& sAdd, const CString& sHome) {
 	CString sHomeDir(sHome);
 
 	if (sHomeDir.empty()) {
-		sHomeDir = CZNC::Get().GetHomePath();
+		sHomeDir = CFile::GetHomePath();
 	}
 
 	if (sAdd == "~") {

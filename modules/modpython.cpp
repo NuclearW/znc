@@ -8,25 +8,17 @@
 
 #include <Python.h>
 
-#include "Modules.h"
-#include "User.h"
 #include "Chan.h"
-#include "Nick.h"
-#include "znc.h"
+#include "FileUtils.h"
 #include "IRCSock.h"
+#include "Modules.h"
+#include "Nick.h"
+#include "User.h"
+#include "znc.h"
 
 #include "modpython/swigpyrun.h"
 #include "modpython/module.h"
-
-class CPyRetString {
-public:
-	CString& s;
-	CPyRetString(CString& S) : s(S) {}
-	static PyObject* wrap(CString& S) {
-		CPyRetString* x = new CPyRetString(S);
-		return SWIG_NewInstanceObj(x, SWIG_TypeQuery("CPyRetString*"), SWIG_POINTER_OWN);
-	}
-};
+#include "modpython/retstring.h"
 
 class CModPython: public CGlobalModule {
 
@@ -484,6 +476,10 @@ PyObject* CPySocket::WriteBytes(PyObject* data) {
 	} else {
 		Py_RETURN_FALSE;
 	}
+}
+
+template<> void TModInfo<CModPython>(CModInfo& Info) {
+	Info.SetWikiPage("modpython");
 }
 
 GLOBALMODULEDEFS(CModPython, "Loads python scripts as ZNC modules")

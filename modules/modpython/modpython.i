@@ -23,20 +23,12 @@
 #include "../znc.h"
 #include "../Server.h"
 #include "../ZNCString.h"
-#include "../DCCBounce.h"
-#include "../DCCSock.h"
 #include "../FileUtils.h"
+#include "../ZNCDebug.h"
+#include "../ExecSock.h"
 #include "modpython/module.h"
 
-class CPyRetString {
-public:
-	CString& s;
-	CPyRetString(CString& S) : s(S) {}
-	static PyObject* wrap(CString& S) {
-		CPyRetString* x = new CPyRetString(S);
-		return SWIG_NewInstanceObj(x, SWIG_TypeQuery("CPyRetString*"), SWIG_POINTER_OWN);
-	}
-};
+#include "modpython/retstring.h"
 
 #define stat struct stat
 using std::allocator;
@@ -61,21 +53,6 @@ namespace std {
 
 %include "modpython/cstring.i"
 %template(_stringlist) std::list<CString>;
-/*%typemap(out) std::list<CString> {
-	std::list<CString>::const_iterator i;
-	unsigned int j;
-	int len = $1.size();
-	SV **svs = new SV*[len];
-	for (i=$1.begin(), j=0; i!=$1.end(); i++, j++) {
-		svs[j] = sv_newmortal();
-		SwigSvFromString(svs[j], *i);
-	}
-	AV *myav = av_make(len, svs);
-	delete[] svs;
-	$result = newRV_noinc((SV*) myav);
-	sv_2mortal($result);
-	argvi++;
-}*/
 
 %typemap(out) CModules::ModDirList %{
 	$result = PyList_New($1.size());
@@ -104,8 +81,6 @@ namespace std {
 %include "../Csocket.h"
 %template(ZNCSocketManager) TSocketManager<CZNCSock>;
 %include "../Socket.h"
-%include "../DCCBounce.h"
-%include "../DCCSock.h"
 %include "../FileUtils.h"
 %include "../Modules.h"
 %include "../Nick.h"
@@ -119,6 +94,8 @@ namespace std {
 %include "../WebModules.h"
 %include "../znc.h"
 %include "../Server.h"
+%include "../ZNCDebug.h"
+%include "../ExecSock.h"
 
 %include "modpython/module.h"
 
@@ -129,7 +106,22 @@ public:
 	CString s;
 };
 
+%extend CPyRetString {
+	CString __str__() {
+		return $self->s;
+	}
+};
+
+%extend String {
+	CString __str__() {
+		return $self->s;
+	}
+};
+
 %extend CModule {
+	CString __str__() {
+		return $self->GetModName();
+	}
 	MCString_iter BeginNV_() {
 		return MCString_iter($self->BeginNV());
 	}
@@ -152,6 +144,33 @@ public:
 		return false;
 	}
 }
+
+%extend CUser {
+	CString __str__() {
+		return $self->GetUserName();
+	}
+	CString __repr__() {
+		return "<CUser " + $self->GetUserName() + ">";
+	}
+};
+
+%extend CChan {
+	CString __str__() {
+		return $self->GetName();
+	}
+	CString __repr__() {
+		return "<CChan " + $self->GetName() + ">";
+	}
+};
+
+%extend CNick {
+	CString __str__() {
+		return $self->GetNick();
+	}
+	CString __repr__() {
+		return "<CNick " + $self->GetHostMask() + ">";
+	}
+};
 
 /* Web */
 

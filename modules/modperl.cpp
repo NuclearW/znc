@@ -6,12 +6,13 @@
  * by the Free Software Foundation.
  */
 
-#include "Modules.h"
-#include "User.h"
 #include "Chan.h"
-#include "Nick.h"
-#include "znc.h"
+#include "FileUtils.h"
 #include "IRCSock.h"
+#include "Modules.h"
+#include "Nick.h"
+#include "User.h"
+#include "znc.h"
 
 #include "modperl/module.h"
 #include "modperl/swigperlrun.h"
@@ -73,44 +74,40 @@ public:
 		return true;
 	}
 
-	ELoadPerlMod LoadPerlModule(const CString& sModule, const CString& sArgs, CUser* pUser, CString& sRetMsg) {
-		ELoadPerlMod result = Perl_LoadError;
-		PSTART;
-		PUSH_STR(sModule);
-		PUSH_STR(sArgs);
-		PUSH_PTR(CUser*, pUser);
-		PCALL("ZNC::Core::LoadModule");
-
-		if (SvTRUE(ERRSV)) {
-			sRetMsg = PString(ERRSV);
-		} else if (2 == ret) {
-			result = static_cast<ELoadPerlMod>(SvUV(ST(0)));
-			sRetMsg = PString(ST(1));
-		}
-		DEBUG(__PRETTY_FUNCTION__ << " " << sRetMsg);
-
-		PEND;
-		return result;
-	}
-
 	virtual EModRet OnModuleLoading(const CString& sModName, const CString& sArgs,
 			bool& bSuccess, CString& sRetMsg) {
 		if (!GetUser()) {
 			return CONTINUE;
 		}
-		switch (LoadPerlModule(sModName, sArgs, GetUser(), sRetMsg)) {
-			case Perl_NotFound:
-				return CONTINUE;
-			case Perl_Loaded:
-				bSuccess = true;
-				return HALT;
-			case Perl_LoadError:
-				bSuccess = false;
-				return HALT;
+		EModRet result = HALT;
+		PSTART;
+		PUSH_STR(sModName);
+		PUSH_STR(sArgs);
+		PUSH_PTR(CUser*, GetUser());
+		PCALL("ZNC::Core::LoadModule");
+
+		if (SvTRUE(ERRSV)) {
+			sRetMsg = PString(ERRSV);
+			bSuccess = false;
+			result = HALT;
+			DEBUG("Perl ZNC::Core::LoadModule died: " << sRetMsg);
+		} else if (ret < 1 || 2 < ret) {
+			sRetMsg = "Error: Perl ZNC::Core::LoadModule returned " + CString(ret) + " values.";
+			bSuccess = false;
+			result = HALT;
+		} else {
+			ELoadPerlMod eLPM = static_cast<ELoadPerlMod>(SvUV(ST(0)));
+			if (Perl_NotFound == eLPM) {
+				result = CONTINUE; // Not a Perl module
+			} else {
+				sRetMsg = PString(ST(1));
+				result = HALT;
+				bSuccess = eLPM == Perl_Loaded;
+			}
 		}
-		sRetMsg = "Something weird happened";
-		bSuccess = false;
-		return HALT;
+
+		PEND;
+		return result;
 	}
 
 	virtual EModRet OnModuleUnloading(CModule* pModule, bool& bSuccess, CString& sRetMsg) {
@@ -150,11 +147,12 @@ public:
 					break;
 				case Perl_Loaded:
 					result = HALT;
-					if (3 == ret) {
+					if (4 == ret) {
 						ModInfo.SetGlobal(false);
 						ModInfo.SetDescription(PString(ST(2)));
 						ModInfo.SetName(sModule);
 						ModInfo.SetPath(PString(ST(1)));
+						ModInfo.SetWikiPage(PString(ST(3)));
 						bSuccess = true;
 					} else {
 						bSuccess = false;
@@ -204,11 +202,12 @@ public:
 				PUSH_STR(sPath);
 				PUSH_STR(sName);
 				PCALL("ZNC::Core::ModInfoByPath");
-				if (!SvTRUE(ERRSV) && ret == 1) {
+				if (!SvTRUE(ERRSV) && ret == 2) {
 					ModInfo.SetGlobal(false);
 					ModInfo.SetDescription(PString(ST(0)));
 					ModInfo.SetName(sName);
 					ModInfo.SetPath(sPath);
+					ModInfo.SetWikiPage(PString(ST(1)));
 					ssMods.insert(ModInfo);
 				}
 				PEND;
@@ -317,6 +316,10 @@ CPerlSocket::~CPerlSocket() {
 		PCALL("ZNC::Core::RemoveSocket");
 		PEND;
 	}
+}
+
+template<> void TModInfo<CModPerl>(CModInfo& Info) {
+	Info.SetWikiPage("modperl");
 }
 
 GLOBALMODULEDEFS(CModPerl, "Loads perl scripts as ZNC modules")

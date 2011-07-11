@@ -7,11 +7,13 @@
  */
 
 #include "Chan.h"
+#include "FileUtils.h"
 #include "IRCSock.h"
 #include "User.h"
 #include "znc.h"
+#include "Config.h"
 
-CChan::CChan(const CString& sName, CUser* pUser, bool bInConfig) {
+CChan::CChan(const CString& sName, CUser* pUser, bool bInConfig, CConfig *pConfig) {
 	m_sName = sName.Token(0);
 	m_sKey = sName.Token(1);
 	m_pUser = pUser;
@@ -27,6 +29,23 @@ CChan::CChan(const CString& sName, CUser* pUser, bool bInConfig) {
 	m_bKeepBuffer = m_pUser->KeepBuffer();
 	m_bDisabled = false;
 	Reset();
+
+	if (pConfig) {
+		CString sValue;
+		if (pConfig->FindStringEntry("buffer", sValue))
+			SetBufferCount(sValue.ToUInt(), true);
+		if (pConfig->FindStringEntry("keepbuffer", sValue))
+			SetKeepBuffer(sValue.ToBool());
+		if (pConfig->FindStringEntry("detached", sValue))
+			SetDetached(sValue.ToBool());
+		if (pConfig->FindStringEntry("autocycle", sValue))
+			if (sValue.Equals("true"))
+				CUtils::PrintError("WARNING: AutoCycle has been removed, instead try -> LoadModule = autocycle " + sName);
+		if (pConfig->FindStringEntry("key", sValue))
+			SetKey(sValue);
+		if (pConfig->FindStringEntry("modes", sValue))
+			SetDefaultModes(sValue);
+	}
 }
 
 CChan::~CChan() {
@@ -63,8 +82,6 @@ bool CChan::WriteConfig(CFile& File) {
 	if (!GetDefaultModes().empty())
 		m_pUser->PrintLine(File, "\tModes", GetDefaultModes());
 
-	MODULECALL(OnWriteChanConfig(File, *this), m_pUser, NULL, NOTHING);
-
 	File.Write("\t</Chan>\n");
 	return true;
 }
@@ -95,6 +112,7 @@ bool CChan::SetBufferCount(unsigned int u, bool bForce) {
 	if (!bForce && u > CZNC::Get().GetMaxBufferSize())
 		return false;
 	m_uBufferCount = u;
+	TrimBuffer(m_uBufferCount);
 	return true;
 }
 
@@ -515,6 +533,12 @@ int CChan::AddBuffer(const CString& sLine) {
 
 void CChan::ClearBuffer() {
 	m_vsBuffer.clear();
+}
+
+void CChan::TrimBuffer(const unsigned int uMax) {
+	if (m_vsBuffer.size() > uMax) {
+		m_vsBuffer.erase(m_vsBuffer.begin(), m_vsBuffer.begin() + (uMax - m_vsBuffer.size()));
+	}
 }
 
 void CChan::SendBuffer(CClient* pClient) {

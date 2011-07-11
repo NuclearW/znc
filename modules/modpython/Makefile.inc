@@ -1,11 +1,11 @@
 # vim: filetype=make
 
-ifneq "$(PYCFG)" ""
-PYTHONCOMMON := $(shell $(PYCFG) --includes) $(shell $(PYCFG) --ldflags)
+ifeq "$(PYTHON_ON)" "yes"
+PYTHONCOMMON := $(PY_CFLAGS)
 PYTHONCOMMON += -DSWIG_TYPE_TABLE=znc
 PYTHONCOMMON += -Wno-missing-field-initializers -Wno-unused -Wno-shadow
 PYTHONCOMMON += -Wno-missing-declarations -Wno-uninitialized
-modpythonFLAGS := $(PYTHONCOMMON) -I.
+modpythonFLAGS := $(PYTHONCOMMON) -I. $(PY_LDFLAGS)
 
 PYTHONHOOK   := modpython_install
 CLEAN    += modpython/_znc_core.so modpython/_znc_core.cpp modpython/znc_core.py modpython/znc_core.pyc
@@ -28,7 +28,7 @@ install: $(PYTHONHOOK)
 	$(E) Compiling $@...
 	$(Q)$^ $@
 
-ifneq "$(PYCFG)" ""
+ifeq "$(PYTHON_ON)" "yes"
 all: modpython_all
 endif
 modpython_all: modpython/_znc_core.so modpython/swigpyrun.h modpython/znc.pyc modpython/znc_core.pyc
@@ -39,7 +39,7 @@ modpython/_znc_core.so: modpython/_znc_core.cpp Makefile modpython/functions.cpp
 	@mkdir -p modpython
 	@mkdir -p .depend
 	$(E) Building ZNC python bindings library...
-	$(Q)$(CXX) $(MODFLAGS) $(LDFLAGS) $(MODLINK) -I$(srcdir) -MMD -MF .depend/modpython.library.dep $(PYTHONCOMMON) -o $@ $<
+	$(Q)$(CXX) $(MODFLAGS) $(LDFLAGS) $(MODLINK) -I$(srcdir) -MMD -MF .depend/modpython.library.dep $(PYTHONCOMMON) -o $@ $< $(PY_LDFLAGS)
 ifneq "$(SWIG)" ""
 modpython/swigpyrun.h:
 	@mkdir -p modpython
@@ -55,19 +55,12 @@ modpython/functions.cpp: modpython/functions.in
 	$(Q)$(PERL) $(srcdir)/modpython/codegen.pl $< $@
 
 modpython/compiler: modpython/compiler.cpp Makefile
-	$(E) Building optimizator for python files...
-	$(Q)$(CXX) $(PYTHONCOMMON) -o $@ $<
+	$(E) Building optimizer for python files...
+	$(Q)$(CXX) $(PYTHONCOMMON) -o $@ $< $(PY_LDFLAGS)
 
-modpython_install: create_install_dir install_metadirs modpython_all
-	for i in $(wildcard *.pyc); do \
+modpython_install: create_install_dir modpython_all
+	-for i in *.pyc; do \
 		$(INSTALL_DATA) $$i $(DESTDIR)$(MODDIR); \
-	done
-	for a in $(srcdir)/*; do \
-		if [ -d $$a ]; then \
-			if [ -f $${a}.py ]; then \
-				cp -Rp $$a $(DESTDIR)$(DATADIR); \
-			fi \
-		fi \
 	done
 	mkdir -p $(DESTDIR)$(MODDIR)/modpython
 	$(INSTALL_PROGRAM) modpython/_znc_core.so $(DESTDIR)$(MODDIR)/modpython

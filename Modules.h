@@ -11,8 +11,7 @@
 
 #include "zncconfig.h"
 #include "WebModules.h"
-#include "FileUtils.h"
-#include "Utils.h"
+#include "main.h"
 #include <set>
 #include <queue>
 
@@ -25,6 +24,9 @@ class CClient;
 class CWebSock;
 class CTemplate;
 class CIRCSock;
+class CModule;
+class CGlobalModule;
+class CModInfo;
 // !Forward Declarations
 
 // User Module Macros
@@ -40,13 +42,30 @@ class CIRCSock;
 
 typedef void* ModHandle;
 
-#define MODCOMMONDEFS(DESCRIPTION, GLOBAL) \
-	const char *ZNCModDescription(); \
-	bool ZNCModGlobal(); \
-	double ZNCModVersion(); \
-	const char *ZNCModDescription() { return DESCRIPTION; } \
-	double ZNCModVersion() { return VERSION; } \
-	bool ZNCModGlobal() { return GLOBAL; } \
+template<class M> void TModInfo(CModInfo& Info) {}
+
+template<class M> CModule* TModLoad(ModHandle p, CUser* pUser,
+		const CString& sModName, const CString& sModPath) {
+	return new M(p, pUser, sModName, sModPath);
+}
+template<class M> CGlobalModule* TModLoadGlobal(ModHandle p,
+		const CString& sModName, const CString& sModPath) {
+	return new M(p, sModName, sModPath);
+}
+
+#define MODCOMMONDEFS(CLASS, DESCRIPTION, GLOBAL, LOADER) \
+	extern "C" { \
+		bool ZNCModInfo(double dCoreVersion, CModInfo& Info); \
+		bool ZNCModInfo(double dCoreVersion, CModInfo& Info) { \
+			if (dCoreVersion != VERSION) \
+				return false; \
+			Info.SetDescription(DESCRIPTION); \
+			Info.SetGlobal(GLOBAL); \
+			LOADER; \
+			TModInfo<CLASS>(Info); \
+			return true; \
+		} \
+	}
 
 /** Instead of writing a constructor, you should call this macro. It accepts all
  *  the necessary arguments and passes them on to CModule's constructor. You
@@ -76,17 +95,7 @@ typedef void* ModHandle;
  *  @see For global modules you need GLOBALMODULEDEFS.
  */
 #define MODULEDEFS(CLASS, DESCRIPTION) \
-	extern "C" { \
-		MODCOMMONDEFS(DESCRIPTION, false) \
-		/* First the definitions to shut up some compiler warnings */ \
-		CModule* ZNCModLoad(ModHandle p, CUser* pUser, const CString& sModName, \
-				const CString& sModPath); \
-		void ZNCModUnload(CModule* pMod); \
-		CModule* ZNCModLoad(ModHandle p, CUser* pUser, const CString& sModName, \
-				const CString& sModPath) \
-		{ return new CLASS(p, pUser, sModName, sModPath); } \
-		void ZNCModUnload(CModule* pMod) { if (pMod) { delete pMod; } } \
-	}
+	MODCOMMONDEFS(CLASS, DESCRIPTION, false, Info.SetLoader(TModLoad<CLASS>))
 // !User Module Macros
 
 // Global Module Macros
@@ -97,17 +106,7 @@ typedef void* ModHandle;
 
 /** This works exactly like MODULEDEFS, but for global modules. */
 #define GLOBALMODULEDEFS(CLASS, DESCRIPTION) \
-	extern "C" { \
-		MODCOMMONDEFS(DESCRIPTION, true) \
-		/* First the definitions to shut up some compiler warnings */ \
-		CGlobalModule* ZNCModLoad(ModHandle p, const CString& sModName, \
-				const CString& sModPath); \
-		void ZNCModUnload(CGlobalModule* pMod); \
-		CGlobalModule* ZNCModLoad(ModHandle p, const CString& sModName, \
-				const CString& sModPath) \
-		{ return new CLASS(p, sModName, sModPath); } \
-		void ZNCModUnload(CGlobalModule* pMod) { if (pMod) { delete pMod; } } \
-	}
+	MODCOMMONDEFS(CLASS, DESCRIPTION, true, Info.SetGlobalLoader(TModLoadGlobal<CLASS>))
 // !Global Module Macros
 
 // Forward Declarations
@@ -167,11 +166,19 @@ private:
 
 class CModInfo {
 public:
-	CModInfo() {}
+	typedef CModule* (*ModLoader)(ModHandle p, CUser* pUser, const CString& sModName, const CString& sModPath);
+	typedef CGlobalModule* (*GlobalModLoader)(ModHandle p, const CString& sModName, const CString& sModPath);
+
+	CModInfo() {
+		m_fGlobalLoader = NULL;
+		m_fLoader = NULL;
+	}
 	CModInfo(const CString& sName, const CString& sPath, bool bGlobal) {
 		m_bGlobal = bGlobal;
 		m_sName = sName;
 		m_sPath = sPath;
+		m_fGlobalLoader = NULL;
+		m_fLoader = NULL;
 	}
 	~CModInfo() {}
 
@@ -183,21 +190,82 @@ public:
 	const CString& GetName() const { return m_sName; }
 	const CString& GetPath() const { return m_sPath; }
 	const CString& GetDescription() const { return m_sDescription; }
+	const CString& GetWikiPage() const { return m_sWikiPage; }
 	bool IsGlobal() const { return m_bGlobal; }
+	ModLoader GetLoader() const { return m_fLoader; }
+	GlobalModLoader GetGlobalLoader() const { return m_fGlobalLoader; }
 	// !Getters
 
 	// Setters
 	void SetName(const CString& s) { m_sName = s; }
 	void SetPath(const CString& s) { m_sPath = s; }
 	void SetDescription(const CString& s) { m_sDescription = s; }
+	void SetWikiPage(const CString& s) { m_sWikiPage = s; }
 	void SetGlobal(bool b) { m_bGlobal = b; }
+	void SetLoader(ModLoader fLoader) { m_fLoader = fLoader; }
+	void SetGlobalLoader(GlobalModLoader fGlobalLoader) { m_fGlobalLoader = fGlobalLoader; }
 	// !Setters
 private:
 protected:
-	bool     m_bGlobal;
-	CString  m_sName;
-	CString  m_sPath;
-	CString  m_sDescription;
+	bool            m_bGlobal;
+	CString         m_sName;
+	CString         m_sPath;
+	CString         m_sDescription;
+	CString         m_sWikiPage;
+	ModLoader       m_fLoader;
+	GlobalModLoader m_fGlobalLoader;
+};
+
+/** A helper class for handling commands in modules. */
+class CModCommand {
+public:
+	/// Type for the callback function that handles the actual command.
+	typedef void (CModule::*ModCmdFunc)(const CString& sLine);
+
+	/// Default constructor, needed so that this can be saved in a std::map.
+	CModCommand();
+
+	/** Construct a new CModCommand.
+	 * @param sCmd The name of the command.
+	 * @param func The command's callback function.
+	 * @param sArgs Help text describing the arguments to this command.
+	 * @param sDesc Help text describing what this command does.
+	 */
+	CModCommand(const CString& sCmd, ModCmdFunc func, const CString& sArgs, const CString& sDesc);
+
+	/** Copy constructor, needed so that this can be saved in a std::map.
+	 * @param other Object to copy from.
+	 */
+	CModCommand(const CModCommand& other);
+
+	/** Assignment operator, needed so that this can be saved in a std::map.
+	 * @param other Object to copy from.
+	 */
+	CModCommand& operator=(const CModCommand& other);
+
+	/** Initialize a CTable so that it can be used with AddHelp().
+	 * @param Table The instance of CTable to initialize.
+	 */
+	static void InitHelp(CTable& Table);
+
+	/** Add this command to the CTable instance.
+	 * @param Table Instance of CTable to which this should be added.
+	 * @warning The Table should be initialized via InitHelp().
+	 */
+	void AddHelp(CTable& Table) const;
+
+	const CString& GetCommand() const { return m_sCmd; }
+	ModCmdFunc GetFunction() const { return m_pFunc; }
+	const CString& GetArgs() const { return m_sArgs; }
+	const CString& GetDescription() const { return m_sDesc; }
+
+	void Call(CModule *pMod, const CString& sLine) const { (pMod->*m_pFunc)(sLine); }
+
+private:
+	CString m_sCmd;
+	ModCmdFunc m_pFunc;
+	CString m_sArgs;
+	CString m_sDesc;
 };
 
 /** The base class for your own ZNC modules.
@@ -340,6 +408,11 @@ public:
 	 *  @return See CModule::EModRet.
 	 */
 	virtual EModRet OnIRCConnecting(CIRCSock *pIRCSock);
+	/** This module hook is called when a CIRCSock fails to connect or
+	 *  a module returned HALTCORE from OnIRCConnecting.
+	 *  @param pIRCSock The socket that failed to connect.
+	 */
+	virtual void OnIRCConnectionError(CIRCSock *pIRCSock);
 	/** This module hook is called before loging in to the IRC server. The
 	 *  low-level connection is established at this point, but SSL
 	 *  handshakes didn't necessarily finish yet.
@@ -356,38 +429,6 @@ public:
 	 *  @return see CModule::EModRet
 	 */
 	virtual EModRet OnBroadcast(CString& sMessage);
-
-	/** Called when a module-specific config line is read from znc.conf.
-	 *  Module specific config lines are always prefixed with "GM:".
-	 *  @param sName Name of the config entry without the "GM:" prefix.
-	 *  @param sValue The value of the config entry.
-	 *  @param pUser If this line was found in a user section, then this is
-	 *               the corresponding CUser instance.
-	 *  @param pChan If this line was found in a chan section, then this is
-	 *               the corresponding CChan instance.
-	 *  @return See CModule::EModRet.
-	 */
-	virtual EModRet OnConfigLine(const CString& sName, const CString& sValue, CUser* pUser, CChan* pChan);
-	/** Called just before ZNC finishes a user section in the config file.
-	 *  This can be used to re-write the "GM:" lines for OnConfigLine()
-	 *  which would get lost otherwise.
-	 *  @param Config Reference to the CFile which will be used for writing
-	 *                the config file.
-	 */
-	virtual void OnWriteUserConfig(CFile& Config);
-	/** Called just before ZNC finishes a chan section in the config file.
-	 *  This can be used to re-write the "GM:" lines for OnConfigLine()
-	 *  which would get lost otherwise.
-	 *  @param Config Reference to the CFile which will be used for writing
-	 *                the config file.
-	 *  @param Chan The channel which is being written.
-	 */
-	virtual void OnWriteChanConfig(CFile& Config, CChan& Chan);
-
-	/** This module hook is called when a user sends a DCC SEND request to
-	 *  your module fake-nickname.
-	 */
-	virtual EModRet OnDCCUserSend(const CNick& RemoteNick, unsigned long uLongIP, unsigned short uPort, const CString& sFile, unsigned long uFileSize);
 
 	/** This module hook is called when a user mode on a channel changes.
 	 *  @param OpNick The nick who sent the mode change.
@@ -442,6 +483,13 @@ public:
 	 *  @param sCommand The command that was sent.
 	 */
 	virtual void OnModCommand(const CString& sCommand);
+	/** This is similar to OnModCommand(), but it is only called if
+	 * HandleCommand didn't find any that wants to handle this. This is only
+	 * called if HandleCommand() is called, which practically means that
+	 * this is only called if you don't overload OnModCommand().
+	 *  @param sCommand The command that was sent.
+	 */
+	virtual void OnUnknownModCommand(const CString& sCommand);
 	/** Called when a your module nick was sent a notice.
 	 *  @param sMessage The message which was sent.
 	 */
@@ -698,28 +746,22 @@ public:
 	 *  module hook for a specific client, only that client gets this
 	 *  message, else all connected clients will receive it.
 	 *  @param sLine The message which should be sent.
-	 *  @param sIdent The ident for the module nick. Defaults to the module name.
-	 *  @param sHost The hostname for the module nick. Defaults to znc.in
 	 *  @return true if the line was sent to at least one client.
 	 */
-	virtual bool PutModule(const CString& sLine, const CString& sIdent = "", const CString& sHost = "znc.in");
+	virtual bool PutModule(const CString& sLine);
 	/** This function calls CModule::PutModule(const CString&, const
 	 *  CString&, const CString&) for each line in the table.
 	 *  @param table The table which should be send.
-	 *  @param sIdent The ident which should be used.
-	 *  @param sHost The hostname used for the query.
 	 *  @return The number of lines sent.
 	 */
-	virtual unsigned int PutModule(const CTable& table, const CString& sIdent = "", const CString& sHost = "znc.in");
+	virtual unsigned int PutModule(const CTable& table);
 	/** Send a notice from your module nick. If we are in a module hook for
 	 *  a specific client, only that client gets this notice, else all
 	 *  clients will receive it.
 	 *  @param sLine The line which should be sent.
-	 *  @param sIdent The ident used for the notice.
-	 *  @param sHost The host name used for the notice.
 	 *  @return true if the line was sent to at least one client.
 	 */
-	virtual bool PutModNotice(const CString& sLine, const CString& sIdent = "", const CString& sHost = "znc.in");
+	virtual bool PutModNotice(const CString& sLine);
 
 	/** @returns The name of the module. */
 	const CString& GetModName() const { return m_sModName; }
@@ -758,6 +800,31 @@ public:
 	virtual void ListSockets();
 	// !Socket stuff
 
+	// Command stuff
+	/// Register the "Help" command.
+	void AddHelpCommand();
+	/// @return True if the command was successfully added.
+	bool AddCommand(const CModCommand& Command);
+	/// @return True if the command was successfully added.
+	bool AddCommand(const CString& sCmd, CModCommand::ModCmdFunc func, const CString& sArgs = "", const CString& sDesc = "");
+	/// @return True if the command was successfully removed.
+	bool RemCommand(const CString& sCmd);
+	/// @return The CModCommand instance or NULL if none was found.
+	const CModCommand* FindCommand(const CString& sCmd) const;
+	/** This function tries to dispatch the given command via the correct
+	 * instance of CModCommand. Before this can be called, commands have to
+	 * be added via AddCommand(). If no matching commands are found then
+	 * OnUnknownModCommand will be called.
+	 * @param sLine The command line to handle.
+	 * @return True if something was done, else false.
+	 */
+	bool HandleCommand(const CString& sLine);
+	/** Send a description of all registered commands via PutModule().
+	 * @param sLine The help command that is being asked for.
+	 */
+	void HandleHelpCommand(const CString& sLine = "");
+	// !Command stuff
+
 	bool LoadRegistry();
 	bool SaveRegistry() const;
 	bool SetNV(const CString & sName, const CString & sValue, bool bWriteToDisk = true);
@@ -769,7 +836,7 @@ public:
 	void DelNV(MCString::iterator it) { m_mssRegistry.erase(it); }
 	bool ClearNV(bool bWriteToDisk = true);
 
-	const CString& GetSavePath() const { if (!CFile::Exists(m_sSavePath)) { CDir::MakeDir(m_sSavePath); } return m_sSavePath; }
+	const CString& GetSavePath() const;
 
 	// Setters
 	void SetGlobal(bool b) { m_bGlobal = b; }
@@ -814,6 +881,7 @@ protected:
 private:
 	MCString           m_mssRegistry; //!< way to save name/value pairs. Note there is no encryption involved in this
 	VWebSubPages       m_vSubPages;
+	map<CString, CModCommand> m_mCommands;
 };
 
 class CModules : public vector<CModule*> {
@@ -834,13 +902,9 @@ public:
 	bool OnIRCDisconnected();
 	bool OnIRCConnected();
 	bool OnIRCConnecting(CIRCSock *pIRCSock);
+	bool OnIRCConnectionError(CIRCSock *pIRCSock);
 	bool OnIRCRegistration(CString& sPass, CString& sNick, CString& sIdent, CString& sRealName);
 	bool OnBroadcast(CString& sMessage);
-	bool OnConfigLine(const CString& sName, const CString& sValue, CUser* pUser, CChan* pChan);
-	bool OnWriteUserConfig(CFile& Config);
-	bool OnWriteChanConfig(CFile& Config, CChan& Chan);
-
-	bool OnDCCUserSend(const CNick& RemoteNick, unsigned long uLongIP, unsigned short uPort, const CString& sFile, unsigned long uFileSize);
 
 	bool OnChanPermission(const CNick& OpNick, const CNick& Nick, CChan& Channel, unsigned char uMode, bool bAdded, bool bNoChange);
 	bool OnOp(const CNick& OpNick, const CNick& Nick, CChan& Channel, bool bNoChange);
@@ -917,7 +981,7 @@ public:
 
 private:
 	static ModHandle OpenModule(const CString& sModule, const CString& sModPath,
-			bool &bVersionMismatch, bool &bIsGlobal, CString& sDesc, CString& sRetMsg);
+			bool &bVersionMismatch, CModInfo& Info, CString& sRetMsg);
 
 protected:
 	CUser*    m_pUser;
@@ -939,14 +1003,6 @@ public:
 			const CString &sDataDir) : CModule(pDLL, sModName, sDataDir) {}
 	virtual ~CGlobalModule() {}
 
-	/** Called when ZNC starts rewriting the config file. This can be used
-	 *  re-write the "GM:" lines for OnConfigLine() which would get lost
-	 *  otherwise.
-	 *  @param Config Reference to the CFile which will be used for writing
-	 *                the config file.
-	 *  @return See CModule::EModRet.
-	 */
-	virtual EModRet OnWriteConfig(CFile& Config);
 	/** This module hook is called when a user is being added.
 	 * @param User The user which will be added.
 	 * @param sErrorRet A message that may be displayed to the user if
@@ -1044,7 +1100,6 @@ public:
 	CGlobalModules() : CModules() {}
 	~CGlobalModules() {}
 
-	bool OnWriteConfig(CFile& Config);
 	bool OnAddUser(CUser& User, CString& sErrorRet);
 	bool OnDeleteUser(CUser& User);
 	bool OnClientConnect(CZNCSock* pSock, const CString& sHost, unsigned short uPort);

@@ -94,9 +94,9 @@ sub LoadModule {
 	return ($ZNC::Perl_LoadError, "Module [$modname] already loaded.") if defined $user->GetModules->FindModule($modname);
 	my $modpath = ZNC::String->new;
 	my $datapath = ZNC::String->new;
-	ZNC::CModules::FindModPath("$modname.pm", $modpath, $datapath) or return ($ZNC::Perl_NotFound, "Unable to find module [$modname]");
+	ZNC::CModules::FindModPath("$modname.pm", $modpath, $datapath) or return ($ZNC::Perl_NotFound);
 	$modpath = $modpath->GetPerlStr;
-	return ($ZNC::Perl_LoadError, "Incorrect perl module.") unless IsModule $modpath, $modname;
+	return ($ZNC::Perl_LoadError, "Incorrect perl module [$modpath]") unless IsModule $modpath, $modname;
 	eval {
 		require $modpath;
 	};
@@ -139,9 +139,9 @@ sub LoadModule {
 		return ($ZNC::Perl_LoadError, "Module [$modname] aborted.");
 	}
 	if ($x) {
-		return ($ZNC::Perl_Loaded, "Loaded module [$modname] [$x] [$modpath]");
+		return ($ZNC::Perl_Loaded, "[$x] [$modpath]");
 	}
-	return ($ZNC::Perl_Loaded, "Loaded module [$modname] [$modpath]")
+	return ($ZNC::Perl_Loaded, "[$modpath]")
 }
 
 sub GetModInfo {
@@ -154,7 +154,7 @@ sub GetModInfo {
 	return ($ZNC::Perl_LoadError, "Incorrect perl module.") unless IsModule $modpath, $modname;
 	require $modpath;
 	my $pmod = bless {}, $modname;
-	return ($ZNC::Perl_Loaded, $modpath, $pmod->description)
+	return ($ZNC::Perl_Loaded, $modpath, $pmod->description, $pmod->wiki_page)
 }
 
 sub ModInfoByPath {
@@ -162,7 +162,7 @@ sub ModInfoByPath {
 	die "Incorrect perl module." unless IsModule $modpath, $modname;
 	require $modpath;
 	my $pmod = bless {}, $modname;
-	return ($pmod->description)
+	return ($pmod->description, $pmod->wiki_page)
 }
 
 sub CallModFunc {
@@ -279,6 +279,10 @@ sub description {
 	"< Placeholder for a description >"
 }
 
+sub wiki_page {
+	''
+}
+
 # Default implementations for module hooks. They can be overriden in derived modules.
 sub OnLoad {1}
 sub OnBoot {}
@@ -295,12 +299,9 @@ sub OnPostRehash {}
 sub OnIRCDisconnected {}
 sub OnIRCConnected {}
 sub OnIRCConnecting {}
+sub OnIRCConnectionError {}
 sub OnIRCRegistration {}
 sub OnBroadcast {}
-sub OnConfigLine {}
-sub OnWriteUserConfig {}
-sub OnWriteChanConfig {}
-sub OnDCCUserSend {}
 sub OnChanPermission {}
 sub OnOp {}
 sub OnDeop {}

@@ -84,10 +84,7 @@ public:
 			return false;
 		if (!Nick.GetHostMask().AsLower().WildCmp(m_sHostMask.AsLower()))
 			return false;
-		if (!sText.AsLower().WildCmp(pUser->ExpandString(m_sPattern).AsLower()))
-			return false;
-
-		return true;
+		return (sText.AsLower().WildCmp(pUser->ExpandString(m_sPattern).AsLower()));
 	}
 
 	bool operator ==(const CWatchEntry& WatchEntry) {
@@ -178,7 +175,7 @@ public:
 	}
 
 	virtual void OnKick(const CNick& OpNick, const CString& sKickedNick, CChan& Channel, const CString& sMessage) {
-		Process(OpNick, "* " + OpNick.GetNick() + " kicked " + sKickedNick + " from " + 
+		Process(OpNick, "* " + OpNick.GetNick() + " kicked " + sKickedNick + " from " +
 			Channel.GetName() + " because [" + sMessage + "]", Channel.GetName());
 	}
 
@@ -358,7 +355,7 @@ private:
 	}
 
 	void Dump() {
-		if (!m_lsWatchers.size()) {
+		if (m_lsWatchers.empty()) {
 			PutModule("You have no entries.");
 			return;
 		}
@@ -552,5 +549,9 @@ private:
 	list<CWatchEntry>  m_lsWatchers;
 	CBuffer            m_Buffer;
 };
+
+template<> void TModInfo<CWatcherMod>(CModInfo& Info) {
+	Info.SetWikiPage("watch");
+}
 
 MODULEDEFS(CWatcherMod, "Copy activity from a specific user into a separate window")

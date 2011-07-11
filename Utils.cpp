@@ -9,6 +9,7 @@
 #include "Utils.h"
 #include "MD5.h"
 #include "main.h"
+#include "ZNCDebug.h"
 #include <errno.h>
 #ifdef HAVE_LIBSSL
 #include <openssl/ssl.h>
@@ -23,14 +24,6 @@
 #include <cstdlib>
 
 using std::stringstream;
-
-bool CUtils::stdoutIsTTY = true;
-bool CUtils::debug =
-#ifdef _DEBUG
-		true;
-#else
-		false;
-#endif
 
 CUtils::CUtils() {}
 CUtils::~CUtils() {}
@@ -184,7 +177,11 @@ CString CUtils::SaltedSHA256Hash(const CString& sPass, const CString& sSalt) {
 
 CString CUtils::GetPass(const CString& sPrompt) {
 	PrintPrompt(sPrompt);
+#ifdef HAVE_GETPASSPHRASE
+	return getpassphrase("");
+#else
 	return getpass("");
+#endif
 }
 
 bool CUtils::GetBoolInput(const CString& sPrompt, bool bDefault) {
@@ -271,7 +268,7 @@ bool CUtils::GetInput(const CString& sPrompt, CString& sRet, const CString& sDef
 }
 
 void CUtils::PrintError(const CString& sMessage) {
-	if (stdoutIsTTY)
+	if (CDebug::StdoutIsTTY())
 		fprintf(stdout, "\033[1m\033[34m[\033[31m ** \033[34m]\033[39m\033[22m %s\n", sMessage.c_str());
 	else
 		fprintf(stdout, "%s\n", sMessage.c_str());
@@ -279,7 +276,7 @@ void CUtils::PrintError(const CString& sMessage) {
 }
 
 void CUtils::PrintPrompt(const CString& sMessage) {
-	if (stdoutIsTTY)
+	if (CDebug::StdoutIsTTY())
 		fprintf(stdout, "\033[1m\033[34m[\033[33m ?? \033[34m]\033[39m\033[22m %s: ", sMessage.c_str());
 	else
 		fprintf(stdout, "[ ?? ] %s: ", sMessage.c_str());
@@ -287,7 +284,7 @@ void CUtils::PrintPrompt(const CString& sMessage) {
 }
 
 void CUtils::PrintMessage(const CString& sMessage, bool bStrong) {
-	if (stdoutIsTTY) {
+	if (CDebug::StdoutIsTTY()) {
 		if (bStrong)
 			fprintf(stdout, "\033[1m\033[34m[\033[33m ** \033[34m]\033[39m\033[22m \033[1m%s\033[22m\n",
 					sMessage.c_str());
@@ -301,7 +298,7 @@ void CUtils::PrintMessage(const CString& sMessage, bool bStrong) {
 }
 
 void CUtils::PrintAction(const CString& sMessage) {
-	if (stdoutIsTTY)
+	if (CDebug::StdoutIsTTY())
 		fprintf(stdout, "\033[1m\033[34m[\033[32m    \033[34m]\033[39m\033[22m %s... ", sMessage.c_str());
 	else
 		fprintf(stdout, "%s... ", sMessage.c_str());
@@ -309,7 +306,7 @@ void CUtils::PrintAction(const CString& sMessage) {
 }
 
 void CUtils::PrintStatus(bool bSuccess, const CString& sMessage) {
-	if (stdoutIsTTY) {
+	if (CDebug::StdoutIsTTY()) {
 		if (!sMessage.empty()) {
 			if (bSuccess) {
 				fprintf(stdout, "%s", sMessage.c_str());
@@ -390,7 +387,7 @@ bool CTable::SetCell(const CString& sColumn, const CString& sValue, unsigned int
 bool CTable::GetLine(unsigned int uIdx, CString& sLine) const {
 	stringstream ssRet;
 
-	if (!size()) {
+	if (empty()) {
 		return false;
 	}
 

@@ -11,7 +11,6 @@
 
 #include "zncconfig.h"
 #include "Buffer.h"
-#include "FileUtils.h"
 #include "Modules.h"
 #include "Nick.h"
 #include <set>
@@ -22,16 +21,18 @@ using std::vector;
 
 class CChan;
 class CClient;
+class CConfig;
+class CFile;
 class CIRCSock;
 class CUserTimer;
 class CServer;
-class CDCCBounce;
-class CDCCSock;
 
 class CUser {
 public:
 	CUser(const CString& sUserName);
 	~CUser();
+
+	bool ParseConfig(CConfig* Config, CString& sError);
 
 	enum eHashType {
 		HASH_NONE,
@@ -101,6 +102,7 @@ public:
 	bool PutStatus(const CString& sLine, CClient* pClient = NULL, CClient* pSkipClient = NULL);
 	bool PutStatusNotice(const CString& sLine, CClient* pClient = NULL, CClient* pSkipClient = NULL);
 	bool PutModule(const CString& sModule, const CString& sLine, CClient* pClient = NULL, CClient* pSkipClient = NULL);
+	bool PutModNotice(const CString& sModule, const CString& sLine, CClient* pClient = NULL, CClient* pSkipClient = NULL);
 
 	bool IsUserAttached() const { return !m_vClients.empty(); }
 	void UserConnected(CClient* pClient);
@@ -113,20 +115,12 @@ public:
 	void IRCDisconnected();
 	void CheckIRCConnect();
 
-	void AddDCCBounce(CDCCBounce* p) { m_sDCCBounces.insert(p); }
-	void DelDCCBounce(CDCCBounce* p) { m_sDCCBounces.erase(p); }
-	void AddDCCSock(CDCCSock* p) { m_sDCCSocks.insert(p); }
-	void DelDCCSock(CDCCSock* p) { m_sDCCSocks.erase(p); }
-
 	CString ExpandString(const CString& sStr) const;
 	CString& ExpandString(const CString& sStr, CString& sRet) const;
 
 	CString AddTimestamp(const CString& sStr) const;
 	CString& AddTimestamp(const CString& sStr, CString& sRet) const;
 
-	bool SendFile(const CString& sRemoteNick, const CString& sFileName, const CString& sModuleName = "");
-	bool GetFile(const CString& sRemoteNick, const CString& sRemoteIP, unsigned short uRemotePort, const CString& sFileName, unsigned long uFileSize, const CString& sModuleName = "");
-	bool ResumeFile(unsigned short uPort, unsigned long uFileSize);
 	CString GetCurNick() const;
 	bool Clone(const CUser& User, CString& sErrorRet, bool bCloneChans = true);
 	void BounceAllClients();
@@ -135,7 +129,6 @@ public:
 	void AddBytesWritten(unsigned long long u) { m_uBytesWritten += u; }
 
 	// Setters
-	void SetUserName(const CString& s);
 	void SetNick(const CString& s);
 	void SetAltNick(const CString& s);
 	void SetIdent(const CString& s);
@@ -143,9 +136,7 @@ public:
 	void SetBindHost(const CString& s);
 	void SetDCCBindHost(const CString& s);
 	void SetPass(const CString& s, eHashType eHash, const CString& sSalt = "");
-	void SetBounceDCCs(bool b);
 	void SetMultiClients(bool b);
-	void SetUseClientIP(bool b);
 	void SetDenyLoadMod(bool b);
 	void SetAdmin(bool b);
 	void SetDenySetBindHost(bool b);
@@ -155,6 +146,7 @@ public:
 	void SetIRCServer(const CString& s);
 	void SetQuitMsg(const CString& s);
 	bool AddCTCPReply(const CString& sCTCP, const CString& sReply);
+	bool DelCTCPReply(const CString& sCTCP);
 	bool SetBufferCount(unsigned int u, bool bForce = false);
 	void SetKeepBuffer(bool b);
 	void SetChanPrefixes(const CString& s) { m_sChanPrefixes = s; }
@@ -194,14 +186,11 @@ public:
 	const CString& GetChanPrefixes() const { return m_sChanPrefixes; }
 	bool IsChan(const CString& sChan) const;
 
-	const CString& GetUserPath() const { if (!CFile::Exists(m_sUserPath)) { CDir::MakeDir(m_sUserPath); } return m_sUserPath; }
-	const CString& GetDLPath() const { if (!CFile::Exists(m_sDLPath)) { CDir::MakeDir(m_sDLPath); } return m_sDLPath; }
+	const CString& GetUserPath() const;
 
-	bool UseClientIP() const;
 	bool DenyLoadMod() const;
 	bool IsAdmin() const;
 	bool DenySetBindHost() const;
-	bool BounceDCCs() const;
 	bool MultiClients() const;
 	const CString& GetStatusPrefix() const;
 	const CString& GetDefaultChanModes() const;
@@ -228,8 +217,8 @@ private:
 	void JoinChans(set<CChan*>& sChans);
 
 protected:
-	CString               m_sUserName;
-	CString               m_sCleanUserName;
+	const CString         m_sUserName;
+	const CString         m_sCleanUserName;
 	CString               m_sNick;
 	CString               m_sAltNick;
 	CString               m_sIdent;
@@ -252,15 +241,12 @@ protected:
 
 	// Paths
 	CString               m_sUserPath;
-	CString               m_sDLPath;
 	// !Paths
 
 	CBuffer               m_RawBuffer;
 	CBuffer               m_MotdBuffer;
 	CBuffer               m_QueryBuffer;
 	bool                  m_bMultiClients;
-	bool                  m_bBounceDCCs;
-	bool                  m_bUseClientIP;
 	bool                  m_bDenyLoadMod;
 	bool                  m_bAdmin;
 	bool                  m_bDenySetBindHost;
@@ -276,8 +262,6 @@ protected:
 	vector<CServer*>      m_vServers;
 	vector<CChan*>        m_vChans;
 	vector<CClient*>      m_vClients;
-	set<CDCCBounce*>      m_sDCCBounces;
-	set<CDCCSock*>        m_sDCCSocks;
 	set<CString>          m_ssAllowedHosts;
 	unsigned int          m_uServerIdx; ///< Index in m_vServers of our current server + 1
 	unsigned int          m_uBufferCount;

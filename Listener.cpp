@@ -7,6 +7,7 @@
  */
 
 #include "Listener.h"
+#include "znc.h"
 
 CListener::~CListener() {
 	if (m_pListener)
@@ -15,6 +16,7 @@ CListener::~CListener() {
 
 bool CListener::Listen() {
 	if (!m_uPort || m_pListener) {
+		errno = EINVAL;
 		return false;
 	}
 
@@ -28,6 +30,10 @@ bool CListener::Listen() {
 	}
 #endif
 
+	// If e.g. getaddrinfo() fails, the following might not set errno.
+	// Make sure there is a consistent error message, not something random
+	// which might even be "Error: Success".
+	errno = EINVAL;
 	return CZNC::Get().GetManager().ListenHost(m_uPort, "_LISTENER", m_sBindHost, bSSL, SOMAXCONN,
 			m_pListener, 0, m_eAddr);
 }

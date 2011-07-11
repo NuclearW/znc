@@ -1,5 +1,8 @@
+dnl Needed for AC_PATH_PROGS_FEATURE_CHECK which was added in 2.62
+AC_PREREQ([2.62])
 dnl Keep the version number in sync with main.h!
-AC_INIT([znc], [0.097])
+AC_INIT([znc], [0.099])
+AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([znc.cpp])
 AC_LANG([C++])
 AC_CONFIG_HEADERS([zncconfig.h])
@@ -21,6 +24,8 @@ AC_DEFUN([ZNC_AUTO_FAIL], [
 CXXFLAGS="$CXXFLAGS "
 AC_PROG_CXX
 AC_PROG_INSTALL
+AC_PROG_GREP
+AC_PROG_SED
 AC_CANONICAL_HOST
 AC_SYS_LARGEFILE
 
@@ -66,7 +71,7 @@ case "${host_os}" in
 		appendMod -L/usr/local/lib
 	;;
 	solaris*)
-		appendLib -lsocket -lnsl
+		appendLib -lsocket -lnsl -lresolv
 		ISSUN=1
 	;;
 	cygwin)
@@ -101,9 +106,9 @@ AC_ARG_ENABLE( [perl],
 	[PERL="$enableval"],
 	[PERL="no"])
 AC_ARG_ENABLE( [python],
-	AS_HELP_STRING([--enable-python[[[=python3-config]]]], [enable python.
-			By default python3-config is used, but you can use
-			another name if your python3-config has another name.]),
+	AS_HELP_STRING([--enable-python[[[=python3]]]], [enable python.
+			By default python3.pc of pkg-config is used, but you can use
+			another name, for example python-3.1]),
 	[PYTHON="$enableval"],
 	[PYTHON="no"])
 AC_ARG_ENABLE( [swig],
@@ -111,8 +116,8 @@ AC_ARG_ENABLE( [swig],
 			This value is ignored if perl and python are disabled. If you disable swig,
 			but still want to use these modules, please download the necessary files to modules/modperl and/or to modules/modpython.
 			Check http://en.znc.in/wiki/Modperl and http://en.znc.in/wiki/Modpython for details.]),
-	[SWIG="$enableval"],
-	[SWIG="auto"])
+	[USESWIG="$enableval"],
+	[USESWIG="auto"])
 AC_ARG_ENABLE( [sasl],
 	AS_HELP_STRING([--enable-sasl], [enable sasl]),
 	[if test "$enableval" = "yes" ; then SASL=1; fi],)
@@ -160,11 +165,28 @@ if test "x$GXX" = "xyes"; then
 fi
 
 if test "$POLL" = "yes"; then
-	AC_DEFINE([CSOCK_USE_POLL], [1], [Use poll() instead of select()])
+	# poll() is broken on Mac OS, it fails with POLLNVAL for pipe()s.
+	if test -n "$ISDARWIN"
+	then
+		# Did they give us --enable-poll?
+		if test -n "$enable_poll"
+		then
+			# Yes, they asked for this.
+			AC_MSG_WARN([poll() is known to be broken on Mac OS X. You have been warned.])
+		else
+			# No, our default value of "yes" got applied.
+			AC_MSG_WARN([poll() is known to be broken on Mac OS X. Using select() instead.])
+			AC_MSG_WARN([Use --enable-poll for forcing poll() to be used.])
+			POLL=no
+		fi
+	fi
+	if test "$POLL" = "yes"; then
+		AC_DEFINE([CSOCK_USE_POLL], [1], [Use poll() instead of select()])
+	fi
 fi
 
 AC_CHECK_LIB( gnugetopt, getopt_long,)
-AC_CHECK_FUNCS([lstat])
+AC_CHECK_FUNCS([lstat getopt_long getphassphrase])
 PKG_PROG_PKG_CONFIG()
 
 # ----- Check for dlopen
@@ -274,15 +296,16 @@ else
 fi
 
 if test "x$PERL" != xno -o "x$PYTHON" != xno; then
-	old_SWIG="$SWIG"
-	if test "x$SWIG" != "xno"; then
-		AC_PATH_PROG([SWIG_BINARY], [swig])
-		test -z "$SWIG_BINARY" && SWIG=no
+	old_USESWIG="$USESWIG"
+	if test "x$USESWIG" != "xno"; then
+		AC_PROG_SWIG([1.3.40])
+		test -z "$SWIG" && USESWIG=no
 	fi
-	if test "x$SWIG" = xno; then
-		SWIG_BINARY=""
-		if test "x$old_SWIG" = xno; then
-			SWIG="no, need manual download for perl/python bindings"
+	if test "x$USESWIG" = xno; then
+		SWIG=""
+		AC_MSG_WARN([$SWIG_ERROR])
+		if test "x$old_USESWIG" = xno; then
+			USESWIG="no, need manual download for perl/python bindings"
 			AC_MSG_WARN([swig was disabled, so you should put needed sources to modules/
 Please check http://en.znc.in/wiki/Modperl or http://en.znc.in/wiki/Modpython for details.])
 		else
@@ -290,13 +313,13 @@ Please check http://en.znc.in/wiki/Modperl or http://en.znc.in/wiki/Modpython fo
 Please check http://en.znc.in/wiki/Modperl or http://en.znc.in/wiki/Modpython for details.])
 		fi
 	else
-		SWIG=yes
+		USESWIG=yes
 	fi
 else
-	if test "x$SWIG" = "xyes"; then
+	if test "x$USESWIG" = "xyes"; then
 		AC_MSG_WARN([swig is needed only for perl and python, but both are disabled. Disabling swig.])
 	fi
-	SWIG=no
+	USESWIG=no
 fi
 
 if test "x$PERL" != "xno"; then
@@ -325,22 +348,36 @@ fi
 if test "x$PYTHON" != "xno"; then
 	# Default value for just --enable-python
 	if test "x$PYTHON" = "xyes"; then
-		PYTHON="python3-config"
+		PYTHON="python3"
 	fi
 	old_PYTHON="$PYTHON"
-	AC_PATH_PROG([PYTHONCFG_BINARY], ["$PYTHON"])
-	if test -n "$PYTHONCFG_BINARY"; then
-		my_saved_LIBS="$LIBS"
-		appendLib `$PYTHONCFG_BINARY --ldflags`
-		AC_CHECK_FUNC([Py_Initialize], [], [PYTHON="no"])
-		if test "x$PYTHON" != "xno"; then
-			# Yes, modpython depends on perl.
-			AC_PATH_PROG([PERL_BINARY], [perl])
-			if test -z "$PERL_BINARY"; then
-				AC_MSG_ERROR([To compile modpython you need to be able to execute perl scripts. Try --disable-python or install perl.])
+	if test -z "$PKG_CONFIG"; then
+		AC_MSG_ERROR([pkg-config is required for modpython.])
+	fi
+	PKG_CHECK_MODULES([python], [$PYTHON >= 3.0],, AC_MSG_ERROR([$PYTHON.pc not found or is wrong. Try --disable-python or install python3.]))
+	if test "x$USESWIG" = xyes; then :
+		PKG_CHECK_MODULES([python32], [$PYTHON >= 3.2], [PYTHON_32=yes], [PYTHON_32=no])
+		if test "x$PYTHON_32" = xyes; then
+			AC_MSG_NOTICE([python 3.2+ found, requiring newer swig.])
+			AC_PROG_SWIG([2.0.4])
+			if test -z "$SWIG"; then
+				AC_MSG_ERROR([$SWIG_ERROR])
 			fi
 		fi
+	fi
+	my_saved_LIBS="$LIBS"
+	my_saved_CXXFLAGS="$CXXFLAGS"
+	appendLib $python_LIBS
+	appendCXX $python_CFLAGS
+	AC_CHECK_FUNC([Py_Initialize], [], [PYTHON="no"])
+	if test "x$PYTHON" != "xno"; then
+		# Yes, modpython depends on perl.
+		AC_PATH_PROG([PERL_BINARY], [perl])
+		if test -z "$PERL_BINARY"; then
+			AC_MSG_ERROR([To compile modpython you need to be able to execute perl scripts. Try --disable-python or install perl.])
+		fi
 		LIBS="$my_saved_LIBS"
+		CXXFLAGS="$my_saved_CXXFLAGS"
 	else
 		PYTHON="no"
 	fi
@@ -443,6 +480,18 @@ then
 	fi
 fi
 
+AC_CACHE_CHECK([for GNU make], [ac_cv_path_GNUMAKE], [
+	AC_PATH_PROGS_FEATURE_CHECK([GNUMAKE], [make gmake], [[
+			if $ac_path_GNUMAKE --version | $GREP GNU > /dev/null; then
+				ac_cv_path_GNUMAKE=$ac_path_GNUMAKE
+				ac_path_GNUMAKE_found=:
+			fi
+		]], [AC_MSG_ERROR([could not find GNU make])]
+	)
+])
+GNUMAKE_DIRNAME=`AS_DIRNAME(["$ac_cv_path_GNUMAKE"])`
+GNUMAKE=`echo $ac_cv_path_GNUMAKE | $SED "s%$GNUMAKE_DIRNAME/%%"`
+
 AC_SUBST([CXXFLAGS])
 AC_SUBST([CPPFLAGS])
 AC_SUBST([MODFLAGS])
@@ -460,6 +509,10 @@ AC_SUBST([LIBICONV])
 AC_SUBST([MODDIR])
 AC_SUBST([DATADIR])
 AC_SUBST([PERL])
+AC_SUBST([PYTHON])
+AC_SUBST([SWIG])
+AC_SUBST([python_CFLAGS])
+AC_SUBST([python_LIBS])
 AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([znc-config])
 AC_CONFIG_FILES([znc-buildmod])
@@ -467,6 +520,7 @@ AC_CONFIG_FILES([man/Makefile])
 AC_CONFIG_FILES([znc.pc])
 AC_CONFIG_FILES([znc-uninstalled.pc])
 AC_CONFIG_FILES([modules/Makefile])
+AC_CONFIG_FILES([test/Makefile])
 AC_OUTPUT
 
 echo
@@ -479,7 +533,7 @@ echo "openssl:      $SSL"
 echo "c-ares:       $ARES"
 echo "perl:         $PERL"
 echo "python:       $PYTHON"
-echo "swig:         $SWIG"
+echo "swig:         $USESWIG"
 if test x"$SASL" = "x" ; then
 	echo "sasl:         no"
 else
@@ -497,4 +551,6 @@ else
 	echo "charset:      yes"
 fi
 echo "run from src: $RUNFROMSOURCE"
+echo
+echo "Now you can run \"$GNUMAKE\" to compile ZNC"
 
