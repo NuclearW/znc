@@ -1,13 +1,13 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "Chan.h"
-#include "Modules.h"
+#include <znc/Chan.h>
+#include <znc/Modules.h>
 
 class CAttachMatch {
 public:
@@ -70,7 +70,7 @@ private:
 		bool bHelp = false;
 		bool bNegated = sMsg.TrimPrefix("!");
 		CString sChan = sMsg.Token(0);
-		CString sHost = sMsg.Token(1, true);
+		CString sHost = sMsg.Token(1);
 
 		if (sChan.empty()) {
 			bHelp = true;
@@ -90,7 +90,7 @@ private:
 		CString sMsg  = sLine.Token(1, true);
 		bool bNegated = sMsg.TrimPrefix("!");
 		CString sChan = sMsg.Token(0);
-		CString sHost = sMsg.Token(1, true);
+		CString sHost = sMsg.Token(1);
 
 		if (Del(bNegated, sChan, sHost)) {
 			PutModule("Removed " + sChan + " from list");
@@ -250,4 +250,4 @@ template<> void TModInfo<CChanAttach>(CModInfo& Info) {
 	Info.SetWikiPage("autoattach");
 }
 
-MODULEDEFS(CChanAttach, "Reattaches you to channels on activity.")
+USERMODULEDEFS(CChanAttach, "Reattaches you to channels on activity.")

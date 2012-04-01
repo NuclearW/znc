@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -15,14 +15,17 @@ public:
 
 class CModPython;
 
+#if HAVE_VISIBILITY
+#pragma GCC visibility push(default)
+#endif
 class CPyModule : public CModule {
 	PyObject* m_pyObj;
 	CModPython* m_pModPython;
 	VWebSubPages* _GetSubPages();
 public:
-	CPyModule(CUser* pUser, const CString& sModName, const CString& sDataPath,
-			PyObject* pyObj, CGlobalModule* pModPython)
-			: CModule(NULL, pUser, sModName, sDataPath) {
+	CPyModule(CUser* pUser, CIRCNetwork* pNetwork, const CString& sModName, const CString& sDataPath,
+			PyObject* pyObj, CModule* pModPython)
+			: CModule(NULL, pUser, pNetwork, sModName, sDataPath) {
 		m_pyObj = pyObj;
 		Py_INCREF(pyObj);
 		m_pModPython = reinterpret_cast<CModPython*>(pModPython);
@@ -105,14 +108,28 @@ public:
 	virtual void OnServerCapResult(const CString& sCap, bool bSuccess);
 	virtual EModRet OnTimerAutoJoin(CChan& Channel);
 	bool OnEmbeddedWebRequest(CWebSock&, const CString&, CTemplate&);
+
+	// Global Modules
+	virtual EModRet OnAddUser(CUser& User, CString& sErrorRet);
+	virtual EModRet OnDeleteUser(CUser& User);
+	virtual void OnClientConnect(CZNCSock* pSock, const CString& sHost, unsigned short uPort);
+	virtual void OnFailedLogin(const CString& sUsername, const CString& sRemoteIP);
+	virtual EModRet OnUnknownUserRaw(CClient* pClient, CString& sLine);
+	virtual bool IsClientCapSupported(CClient* pClient, const CString& sCap, bool bState);
+	virtual void OnClientCapRequest(CClient* pClient, const CString& sCap, bool bState);
+	virtual EModRet OnModuleLoading(const CString& sModName, const CString& sArgs,
+			CModInfo::EModuleType eType, bool& bSuccess, CString& sRetMsg);
+	virtual EModRet OnModuleUnloading(CModule* pModule, bool& bSuccess, CString& sRetMsg);
+	virtual EModRet OnGetModInfo(CModInfo& ModInfo, const CString& sModule,
+			bool& bSuccess, CString& sRetMsg);
 };
 
 static inline CPyModule* AsPyModule(CModule* p) {
 	return dynamic_cast<CPyModule*>(p);
 }
 
-inline CPyModule* CreatePyModule(CUser* pUser, const CString& sModName, const CString& sDataPath, PyObject* pyObj, CGlobalModule* pModPython) {
-	return new CPyModule(pUser, sModName, sDataPath, pyObj, pModPython);
+inline CPyModule* CreatePyModule(CUser* pUser, CIRCNetwork* pNetwork, const CString& sModName, const CString& sDataPath, PyObject* pyObj, CModule* pModPython) {
+	return new CPyModule(pUser, pNetwork, sModName, sDataPath, pyObj, pModPython);
 }
 
 class CPyTimer : public CTimer {
@@ -181,13 +198,6 @@ inline bool HaveSSL_() {
 	return false;
 }
 
-inline bool HaveCAres_() {
-#ifdef HAVE_C_ARES
-	return true;
-#endif
-	return false;
-}
-
 inline int GetSOMAXCONN() {
 	return SOMAXCONN;
 }
@@ -224,3 +234,29 @@ public:
 	}
 };
 
+class CModulesIter {
+public:
+	CModulesIter(CModules *pModules) {
+		m_pModules = pModules;
+		m_it = pModules->begin();
+	}
+
+	void plusplus() {
+		++m_it;
+	}
+
+	const CModule* get() const {
+		return *m_it;
+	}
+
+	bool is_end() const {
+		return m_pModules->end() == m_it;
+	}
+
+	CModules *m_pModules;
+	CModules::const_iterator m_it;
+};
+
+#if HAVE_VISIBILITY
+#pragma GCC visibility pop
+#endif

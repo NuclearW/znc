@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2004-2011  See the AUTHORS file for details.
+# Copyright (C) 2004-2012  See the AUTHORS file for details.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License version 2 as published
@@ -150,6 +150,7 @@ class ModuleNV(collections.MutableMapping):
 
 class Module:
     description = '< Placeholder for a description >'
+    module_types = [CModInfo.NetworkModule]
 
     wiki_page = ''
 
@@ -162,7 +163,7 @@ class Module:
     def _GetSubPages(self):
         return self.GetSubPages()
 
-    def CreateSocket(self, socketclass, *the, **rest):
+    def CreateSocket(self, socketclass=Socket, *the, **rest):
         socket = socketclass()
         socket._csock = CreatePySocket(self._cmod, socket)
         socket.Init(*the, **rest)
@@ -365,6 +366,46 @@ class Module:
     def OnEmbeddedWebRequest(self, WebSock, sPageName, Tmpl):
         pass
 
+    # Global modules
+    def OnAddUser(self, User, sErrorRet):
+        pass
+
+    def OnDeleteUser(self, User):
+        pass
+
+    def OnClientConnect(self, pSock, sHost, uPort):
+        pass
+
+    def OnLoginAttempt(self, Auth):
+        pass
+
+    def OnFailedLogin(self, sUsername, sRemoteIP):
+        pass
+
+    def OnUnknownUserRaw(self, pClient, sLine):
+        pass
+
+    def OnClientCapLs(self, pClient, ssCaps):
+        pass
+
+    def IsClientCapSupported(self, pClient, sCap, bState):
+        pass
+
+    def OnClientCapRequest(self, pClient, sCap, bState):
+        pass
+
+    def OnModuleLoading(self, sModName, sArgs, eType, bSuccess, sRetMsg):
+        pass
+
+    def OnModuleUnloading(self, pModule, bSuccess, sRetMsg):
+        pass
+
+    def OnGetModInfo(self, ModInfo, sModule, bSuccess, sRetMsg):
+        pass
+
+    def OnGetAvailableMods(self, ssMods, eType):
+        pass
+
 def make_inherit(cl, parent, attr):
     def make_caller(parent, name, attr):
         return lambda self, *a: parent.__dict__[name](self.__dict__[attr], *a)
@@ -395,7 +436,7 @@ def find_open(modname):
         #       './modules/admin.so', ('.so', 'rb', 3))
         # x == (<open file './modules/pythontest.py', mode 'U' at
         #       0x7fa2dc748d20>, './modules/pythontest.py', ('.py', 'U', 1))
-        if x[0] is None:
+        if x[0] is None and x[2][2] != imp.PKG_DIRECTORY:
             # the same
             continue
         if x[2][0] == '.so':
@@ -415,14 +456,16 @@ def find_open(modname):
             try:
                 pymodule = imp.load_module(modname, *x)
             finally:
-                x[0].close()
-        return (pymodule, d[1])
+                if x[0]:
+                    x[0].close()
+        return (pymodule, d[1]+modname)
     else:
         # nothing found
         return (None, None)
 
+_py_modules = set()
 
-def load_module(modname, args, user, retmsg, modpython):
+def load_module(modname, args, module_type, user, network, retmsg, modpython):
     '''Returns 0 if not found, 1 on loading error, 2 on success'''
     if re.search(r'[^a-zA-Z0-9_]', modname) is not None:
         retmsg.s = 'Module names can only contain letters, numbers and ' \
@@ -436,13 +479,39 @@ def load_module(modname, args, user, retmsg, modpython):
             pymodule.__file__, modname)
         return 1
     cl = pymodule.__dict__[modname]
+
+    if module_type not in cl.module_types:
+        retmsg.s = "Module [{}] doesn't support type.".format(modname)
+        return 1
+
     module = cl()
-    module._cmod = CreatePyModule(user, modname, datapath, module, modpython)
+    module._cmod = CreatePyModule(user, network, modname, datapath, module, modpython)
     module.nv = ModuleNV(module._cmod)
     module.SetDescription(cl.description)
     module.SetArgs(args)
     module.SetModPath(pymodule.__file__)
-    user.GetModules().push_back(module._cmod)
+    module.SetType(module_type)
+    _py_modules.add(module)
+
+    if module_type == CModInfo.UserModule:
+        if not user:
+            retmsg.s = "Module [{}] is UserModule and needs user.".format(modname)
+            unload_module(module)
+            return 1
+        user.GetModules().push_back(module._cmod)
+    elif module_type == CModInfo.NetworkModule:
+        if not network:
+            retmsg.s = "Module [{}] is Network module and needs a network.".format(modname)
+            unload_module(module)
+            return 1
+        network.GetModules().push_back(module._cmod)
+    elif module_type == CModInfo.GlobalModule:
+        CZNC.Get().GetModules().push_back(module._cmod)
+    else:
+        retmsg.s = "Module [{}] doesn't support that module type.".format(modname)
+        unload_module(module)
+        return 1
+
     try:
         loaded = True
         if not module.OnLoad(args, retmsg):
@@ -481,11 +550,23 @@ def load_module(modname, args, user, retmsg, modpython):
 
 def unload_module(module):
     module.OnShutdown()
+    _py_modules.discard(module)
     cmod = module._cmod
+    if module.GetType() == CModInfo.UserModule:
+        cmod.GetUser().GetModules().removeModule(cmod)
+    elif module.GetType() == CModInfo.NetworkModule:
+        cmod.GetNetwork().GetModules().removeModule(cmod)
+    elif module.GetType() == CModInfo.GlobalModule:
+        CZNC.Get().GetModules().removeModule(cmod)
     del module._cmod
-    cmod.GetUser().GetModules().removeModule(cmod)
     cmod.DeletePyModule()
     del cmod
+
+
+def unload_all():
+    while len(_py_modules) > 0:
+        mod = _py_modules.pop()
+        unload_module(mod)
 
 
 def get_mod_info(modname, retmsg, modinfo):
@@ -498,7 +579,9 @@ def get_mod_info(modname, retmsg, modinfo):
             pymodule.__file__, modname)
         return 1
     cl = pymodule.__dict__[modname]
-    modinfo.SetGlobal(False)
+    modinfo.SetDefaultType(cl.module_types[0])
+    for module_type in cl.module_types:
+        modinfo.AddType(module_type)
     modinfo.SetDescription(cl.description)
     modinfo.SetWikiPage(cl.wiki_page)
     modinfo.SetName(modname)
@@ -515,22 +598,26 @@ def get_mod_info_path(path, modname, modinfo):
     #       './modules/admin.so', ('.so', 'rb', 3))
     # x == (<open file './modules/pythontest.py', mode 'U' at 0x7fa2dc748d20>,
     #       './modules/pythontest.py', ('.py', 'U', 1))
-    if x[0] is None:
+    if x[0] is None and x[2][2] != imp.PKG_DIRECTORY:
         return 0
     try:
         pymodule = imp.load_module(modname, *x)
     except ImportError:
         return 0
     finally:
-        x[0].close()
+        if x[0]:
+            x[0].close()
     if modname not in pymodule.__dict__:
         return 0
     cl = pymodule.__dict__[modname]
-    modinfo.SetGlobal(False)
     modinfo.SetDescription(cl.description)
     modinfo.SetWikiPage(cl.wiki_page)
     modinfo.SetName(modname)
     modinfo.SetPath(pymodule.__file__)
+    modinfo.SetDefaultType(cl.module_types[0])
+    for module_type in cl.module_types:
+        modinfo.AddType(module_type)
+
     return 1
 
 
@@ -541,7 +628,6 @@ HALTCORE = CModule.HALTCORE
 UNLOAD = CModule.UNLOAD
 
 HaveSSL = HaveSSL_()
-HaveCAres = HaveCAres_()
 HaveIPv6 = HaveIPv6_()
 Version = GetVersion()
 VersionMajor = GetVersionMajor()
@@ -557,3 +643,34 @@ def CreateWebSubPage(name, title='', params=dict(), admin=False):
     if admin:
         flags |= CWebSubPage.F_ADMIN
     return CreateWebSubPage_(name, title, vpair, flags)
+
+CUser.GetNetworks = CUser.GetNetworks_
+CIRCNetwork.GetChans = CIRCNetwork.GetChans_
+CChan.GetNicks = CChan.GetNicks_
+
+
+class ModulesIter(collections.Iterator):
+    def __init__(self, cmod):
+        self._cmod = cmod
+
+    def __next__(self):
+        if self._cmod.is_end():
+            raise StopIteration
+
+        module = self._cmod.get()
+        self._cmod.plusplus()
+        return module
+CModules.__iter__ = lambda cmod: ModulesIter(CModulesIter(cmod))
+
+
+def str_eq(self, other):
+    if str(other) == str(self):
+        return True
+
+    return id(self) == id(other)
+
+CChan.__eq__ = str_eq
+CNick.__eq__ = str_eq
+CUser.__eq__ = str_eq
+CIRCNetwork.__eq__ = str_eq
+CPyRetString.__eq__ = str_eq

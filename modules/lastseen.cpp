@@ -1,20 +1,20 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "User.h"
-#include "Chan.h"
-#include "znc.h"
+#include <znc/User.h>
+#include <znc/Chan.h>
+#include <znc/znc.h>
 
 using std::map;
 using std::pair;
 using std::multimap;
 
-class CLastSeenMod : public CGlobalModule {
+class CLastSeenMod : public CModule {
 private:
 	time_t GetTime(const CUser *pUser) {
 		return GetNV(pUser->GetUserName()).ToULong();
@@ -61,7 +61,7 @@ private:
 	}
 
 public:
-	GLOBALMODCONSTRUCTOR(CLastSeenMod) {
+	MODCONSTRUCTOR(CLastSeenMod) {
 		AddHelpCommand();
 		AddCommand("Show", static_cast<CModCommand::ModCmdFunc>(&CLastSeenMod::ShowCommand));
 	}
@@ -107,25 +107,6 @@ public:
 				Row["Username"] = pUser->GetUserName();
 				Row["IsSelf"] = CString(pUser == WebSock.GetSession()->GetUser());
 				Row["LastSeen"] = FormatLastSeen(pUser, "never");
-
-				Row["Info"] = CString(pUser->GetClients().size()) +
-					" client" + CString(pUser->GetClients().size() == 1 ? "" : "s");
-				if (!pUser->IsIRCConnected()) {
-					Row["Info"] += ", not connected to IRC";
-				} else {
-					unsigned int uChans = 0;
-					const vector<CChan*>& vChans = pUser->GetChans();
-					for (unsigned int a = 0; a < vChans.size(); ++a) {
-						if (vChans[a]->IsOn()) ++uChans;
-					}
-					unsigned int n = uChans;
-					Row["Info"] += ", joined to " + CString(uChans);
-					if(uChans != vChans.size()) {
-						Row["Info"] += " out of " + CString(vChans.size()) + " configured";
-						n = vChans.size();
-					}
-					Row["Info"] += " channel" + CString(n == 1 ? "" : "s");
-				}
 			}
 
 			return true;

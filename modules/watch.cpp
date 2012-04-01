@@ -1,13 +1,14 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "Chan.h"
-#include "User.h"
+#include <znc/Chan.h>
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
 #include <list>
 
 using std::list;
@@ -57,7 +58,7 @@ public:
 	}
 	virtual ~CWatchEntry() {}
 
-	bool IsMatch(const CNick& Nick, const CString& sText, const CString& sSource, const CUser* pUser) {
+	bool IsMatch(const CNick& Nick, const CString& sText, const CString& sSource, const CIRCNetwork* pNetwork) {
 		if (IsDisabled()) {
 			return false;
 		}
@@ -84,7 +85,7 @@ public:
 			return false;
 		if (!Nick.GetHostMask().AsLower().WildCmp(m_sHostMask.AsLower()))
 			return false;
-		return (sText.AsLower().WildCmp(pUser->ExpandString(m_sPattern).AsLower()));
+		return (sText.AsLower().WildCmp(pNetwork->ExpandString(m_sPattern).AsLower()));
 	}
 
 	bool operator ==(const CWatchEntry& WatchEntry) {
@@ -166,11 +167,13 @@ public:
 	}
 
 	virtual void OnClientLogin() {
-		CString sBufLine;
-		while (m_Buffer.GetNextLine(m_pUser->GetCurNick(), sBufLine)) {
-			PutUser(sBufLine);
-		}
+		MCString msParams;
+		msParams["target"] = m_pNetwork->GetCurNick();
 
+		unsigned int uSize = m_Buffer.Size();
+		for (unsigned int uIdx = 0; uIdx < uSize; uIdx++) {
+			PutUser(m_Buffer.GetLine(uIdx, *GetClient(), msParams));
+		}
 		m_Buffer.Clear();
 	}
 
@@ -286,13 +289,11 @@ private:
 		for (list<CWatchEntry>::iterator it = m_lsWatchers.begin(); it != m_lsWatchers.end(); ++it) {
 			CWatchEntry& WatchEntry = *it;
 
-			if (WatchEntry.IsMatch(Nick, sMessage, sSource, m_pUser)) {
-				if (m_pUser->IsUserAttached()) {
-					m_pUser->PutUser(":" + WatchEntry.GetTarget() + "!watch@znc.in PRIVMSG " +
-							m_pUser->GetCurNick() + " :" + sMessage);
+			if (WatchEntry.IsMatch(Nick, sMessage, sSource, m_pNetwork)) {
+				if (m_pNetwork->IsUserAttached()) {
+					m_pNetwork->PutUser(":" + WatchEntry.GetTarget() + "!watch@znc.in PRIVMSG " + m_pNetwork->GetCurNick() + " :" + sMessage);
 				} else {
-					m_Buffer.AddLine(":" + WatchEntry.GetTarget() + "!watch@znc.in PRIVMSG ",
-							" :" + m_pUser->AddTimestamp(sMessage));
+					m_Buffer.AddLine(":" + _NAMEDFMT(WatchEntry.GetTarget()) + "!watch@znc.in PRIVMSG {target} :{text}", sMessage);
 				}
 			}
 		}
@@ -554,4 +555,4 @@ template<> void TModInfo<CWatcherMod>(CModInfo& Info) {
 	Info.SetWikiPage("watch");
 }
 
-MODULEDEFS(CWatcherMod, "Copy activity from a specific user into a separate window")
+NETWORKMODULEDEFS(CWatcherMod, "Copy activity from a specific user into a separate window")

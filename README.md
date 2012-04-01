@@ -28,11 +28,6 @@ SSL support:
  - openssl 0.9.7d or later (try installing openssl-dev, openssl-devel or
    libssl-dev)
 
-Asynchronous DNS lookup:
-
- - c-ares 1.5.3 or later, older releases don't provide a pkg-config file
-   (try installing libc-ares-dev or c-ares)
-
 modperl:
 
  - This needs perl and its bundled libperl
@@ -48,6 +43,8 @@ saslauth:
 ## Installing ZNC
 
 Installation is done with the `./configure ; make ; make install` commands.
+
+If you are building from git, you will need to run `./autogen.sh` first to produce the `configure` script.
 
 You can use
 	./configure --help
@@ -122,33 +119,33 @@ These directories are also in there:
 
 This file shouldn't be too hard too understand. An explanation of all the
 items can be found on the [Configuration](http://wiki.znc.in/Configuration)-Page.
+Warning: better not to edit config, while ZNC is running.
 
 To rehash the config file, you can send ZNC SIGHUP via
 	pkill -SIGHUP znc
-or you can login to znc and use
+or you can login to ZNC and use
 	/msg *status rehash
 
-If you changed some settings while znc is running, a simple
+If you changed some settings while ZNC is running, a simple
 	pkill -SIGUSR1 znc
 will make ZNC rewrite its config file. Alternatively you can use this:
 	/msg *status saveconfig
 
 ## Writing own modules
 
-You can write your own modules in either C++ or perl.
+You can write your own modules in either C++, python or perl.
 
 C++ modules are compiled by either saving them in the modules source dir and
 running make or with the znc-buildmod shell script.
 
-For additional info look in the wiki:  
- [Writing Modules](http://wiki.znc.in/WritingModules)  
- [Module Hooks](http://wiki.znc.in/ModuleHooks)  
+For additional info look in the wiki:
 
-Perl modules are loaded through the global module modperl.  
- Details: [ModPerl](http://wiki.znc.in/Modperl)
+- [Writing Modules](http://wiki.znc.in/WritingModules)
+- [Module Hooks](http://wiki.znc.in/ModuleHooks)
 
-Python modules are loaded throug the global module modpython.  
- Details: [ModPython](http://wiki.znc.in/Modpython)
+Perl modules are loaded through the global module [ModPerl](http://wiki.znc.in/Modperl).
+
+Python modules are loaded through the global module [ModPython](http://wiki.znc.in/Modpython).
 
 ## Further infos
 

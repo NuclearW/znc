@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -14,9 +14,11 @@
 
 #define REQUIRESSL
 
-#include "Chan.h"
-#include "User.h"
-#include "FileUtils.h"
+#include <znc/Chan.h>
+#include <znc/User.h>
+#include <znc/Buffer.h>
+#include <znc/IRCNetwork.h>
+#include <znc/FileUtils.h>
 #include <sys/stat.h>
 
 #define CRYPT_VERIFICATION_TOKEN "::__:SAVEBUFF:__::"
@@ -84,7 +86,7 @@ public:
 		{
 			m_bFirstLoad = true;
 			AddTimer(new CSaveBuffJob(this, 60, 0, "SaveBuff", "Saves the current buffer to disk every 1 minute"));
-			const vector<CChan *>& vChans = m_pUser->GetChans();
+			const vector<CChan *>& vChans = m_pNetwork->GetChans();
 			for (u_int a = 0; a < vChans.size(); a++)
 			{
 				if (!vChans[a]->KeepBuffer())
@@ -103,7 +105,7 @@ public:
 		CString sFile;
 		if (DecryptChannel(pChan->GetName(), sFile))
 		{
-			if (!pChan->GetBuffer().empty())
+			if (!pChan->GetBuffer().IsEmpty())
 				return(true); // reloaded a module probably in this case, so just verify we can decrypt the file
 
 			VCString vsLines;
@@ -114,7 +116,23 @@ public:
 			for (it = vsLines.begin(); it != vsLines.end(); ++it) {
 				CString sLine(*it);
 				sLine.Trim();
-				pChan->AddBuffer(sLine);
+				if (sLine[0] == '@' && it+1 != vsLines.end())
+				{
+					CString sTimestamp = sLine.Token(0);
+					sTimestamp.TrimLeft("@");
+					time_t tm = sTimestamp.ToLongLong();
+
+					CString sFormat = sLine.Token(1, true);
+
+					CString sText(*++it);
+					sText.Trim();
+
+					pChan->AddBuffer(sFormat, sText, tm);
+				} else
+				{
+					// Old format, escape the line and use as is.
+					pChan->AddBuffer(_NAMEDFMT(sLine));
+				}
 			}
 		} else
 		{
@@ -130,7 +148,7 @@ public:
 	{
 		if (!m_sPassword.empty())
 		{
-			const vector<CChan *>& vChans = m_pUser->GetChans();
+			const vector<CChan *>& vChans = m_pNetwork->GetChans();
 			for (u_int a = 0; a < vChans.size(); a++)
 			{
 				CString sPath = GetPath(vChans[a]->GetName());
@@ -141,13 +159,18 @@ public:
 					continue;
 				}
 
-				const vector<CString> & vBuffer = vChans[a]->GetBuffer();
+				const CBuffer& Buffer = vChans[a]->GetBuffer();
+				CString sLine;
 
 				CString sFile = CRYPT_VERIFICATION_TOKEN;
 
-				for (u_int b = 0; b < vBuffer.size(); b++)
-				{
-						sFile += vBuffer[b] + "\n";
+				unsigned int uSize = Buffer.Size();
+				for (unsigned int uIdx = 0; uIdx < uSize; uIdx++) {
+					const CBufLine& Line = Buffer.GetBufLine(uIdx);
+					sFile +=
+						"@" + CString(Line.GetTime()) + " " +
+						Line.GetFormat() + "\n" +
+						Line.GetText() + "\n";
 				}
 
 				CBlowfish c(m_sPassword, BF_ENCRYPT);
@@ -246,7 +269,7 @@ public:
 	void AddBuffer(CChan& chan, const CString &sLine)
 	{
 		// If they have keep buffer disabled, only add messages if no client is connected
-		if (!chan.KeepBuffer() && m_pUser->IsUserAttached())
+		if (!chan.KeepBuffer() && m_pNetwork->IsUserAttached())
 			return;
 		chan.AddBuffer(sLine);
 	}
@@ -339,5 +362,5 @@ template<> void TModInfo<CSaveBuff>(CModInfo& Info) {
 	Info.SetWikiPage("savebuff");
 }
 
-MODULEDEFS(CSaveBuff, "Stores channel buffers to disk, encrypted")
+NETWORKMODULEDEFS(CSaveBuff, "Stores channel buffers to disk, encrypted")
 

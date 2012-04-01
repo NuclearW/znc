@@ -1,14 +1,15 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "Chan.h"
-#include "User.h"
-#include "Modules.h"
+#include <znc/Chan.h>
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
+#include <znc/Modules.h>
 
 class CBuffExtras : public CModule {
 public:
@@ -18,12 +19,10 @@ public:
 
 	void AddBuffer(CChan& Channel, const CString& sMessage) {
 		// If they have keep buffer disabled, only add messages if no client is connected
-		if (!Channel.KeepBuffer() && m_pUser->IsUserAttached())
+		if (!Channel.KeepBuffer() && m_pNetwork->IsUserOnline())
 			return;
 
-		CString s = ":" + GetModNick() + "!" + GetModName() + "@znc.in PRIVMSG "
-			+ Channel.GetName() + " :" + m_pUser->AddTimestamp(sMessage);
-		Channel.AddBuffer(s);
+		Channel.AddBuffer(":" + GetModNick() + "!" + GetModName() + "@znc.in PRIVMSG " + _NAMEDFMT(Channel.GetName()) + " :{text}", sMessage);
 	}
 
 	virtual void OnRawMode(const CNick& OpNick, CChan& Channel, const CString& sModes, const CString& sArgs) {
@@ -31,8 +30,7 @@ public:
 	}
 
 	virtual void OnKick(const CNick& OpNick, const CString& sKickedNick, CChan& Channel, const CString& sMessage) {
-		AddBuffer(Channel, OpNick.GetNickMask() + " kicked " + sKickedNick
-					+ " Reason: [" + sMessage + "]");
+		AddBuffer(Channel, OpNick.GetNickMask() + " kicked " + sKickedNick + " Reason: [" + sMessage + "]");
 	}
 
 	virtual void OnQuit(const CNick& Nick, const CString& sMessage, const vector<CChan*>& vChans) {
@@ -70,5 +68,5 @@ template<> void TModInfo<CBuffExtras>(CModInfo& Info) {
 	Info.SetWikiPage("buffextras");
 }
 
-MODULEDEFS(CBuffExtras, "Add joins, parts etc. to the playback buffer")
+USERMODULEDEFS(CBuffExtras, "Add joins, parts etc. to the playback buffer")
 

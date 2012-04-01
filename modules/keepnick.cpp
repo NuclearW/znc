@@ -1,14 +1,15 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "Modules.h"
-#include "User.h"
-#include "IRCSock.h"
+#include <znc/Modules.h>
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
+#include <znc/IRCSock.h>
 
 class CKeepNickMod;
 
@@ -33,7 +34,7 @@ public:
 		m_pTimer = NULL;
 
 		// Check if we need to start the timer
-		if (m_pUser->IsIRCConnected())
+		if (m_pNetwork->IsIRCConnected())
 			OnIRCConnected();
 
 		return true;
@@ -44,7 +45,7 @@ public:
 			// No timer means we are turned off
 			return;
 
-		CIRCSock* pIRCSock = GetUser()->GetIRCSock();
+		CIRCSock* pIRCSock = m_pNetwork->GetIRCSock();
 
 		if (!pIRCSock)
 			return;
@@ -57,8 +58,8 @@ public:
 	}
 
 	CString GetNick() {
-		CString sConfNick = m_pUser->GetNick();
-		CIRCSock* pIRCSock = GetUser()->GetIRCSock();
+		CString sConfNick = m_pNetwork->GetNick();
+		CIRCSock* pIRCSock = m_pNetwork->GetIRCSock();
 
 		if (pIRCSock)
 			sConfNick = sConfNick.Left(pIRCSock->GetMaxNickLen());
@@ -67,7 +68,7 @@ public:
 	}
 
 	void OnNick(const CNick& Nick, const CString& sNewNick, const vector<CChan*>& vChans) {
-		if (sNewNick == GetUser()->GetIRCSock()->GetNick()) {
+		if (sNewNick == m_pNetwork->GetIRCSock()->GetNick()) {
 			// We are changing our own nick
 			if (Nick.GetNick().Equals(GetNick())) {
 				// We are changing our nick away from the conf setting.
@@ -101,7 +102,7 @@ public:
 	}
 
 	void OnIRCConnected() {
-		if (!GetUser()->GetIRCSock()->GetNick().Equals(GetNick())) {
+		if (!m_pNetwork->GetIRCSock()->GetNick().Equals(GetNick())) {
 			// We don't have the nick we want, try to get it
 			Enable();
 		}
@@ -126,7 +127,7 @@ public:
 
 	virtual EModRet OnUserRaw(CString& sLine) {
 		// We dont care if we are not connected to IRC
-		if (!m_pUser->IsIRCConnected())
+		if (!m_pNetwork->IsIRCConnected())
 			return CONTINUE;
 
 		// We are trying to get the config nick and this is a /nick?
@@ -145,7 +146,7 @@ public:
 
 		// Indeed trying to change to this nick, generate a 433 for it.
 		// This way we can *always* block incoming 433s from the server.
-		PutUser(":" + m_pUser->GetIRCServer() + " 433 " + m_pUser->GetIRCNick().GetNick()
+		PutUser(":" + m_pNetwork->GetIRCServer() + " 433 " + m_pNetwork->GetIRCNick().GetNick()
 				+ " " + sNick + " :ZNC is already trying to get this nickname");
 		return CONTINUE;
 	}
@@ -196,4 +197,4 @@ template<> void TModInfo<CKeepNickMod>(CModInfo& Info) {
 	Info.SetWikiPage("keepnick");
 }
 
-MODULEDEFS(CKeepNickMod, "Keep trying for your primary nick")
+NETWORKMODULEDEFS(CKeepNickMod, "Keep trying for your primary nick")

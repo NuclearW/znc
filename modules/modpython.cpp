@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -8,22 +8,23 @@
 
 #include <Python.h>
 
-#include "Chan.h"
-#include "FileUtils.h"
-#include "IRCSock.h"
-#include "Modules.h"
-#include "Nick.h"
-#include "User.h"
-#include "znc.h"
+#include <znc/Chan.h>
+#include <znc/FileUtils.h>
+#include <znc/IRCSock.h>
+#include <znc/Modules.h>
+#include <znc/Nick.h>
+#include <znc/User.h>
+#include <znc/znc.h>
 
 #include "modpython/swigpyrun.h"
 #include "modpython/module.h"
 #include "modpython/retstring.h"
 
-class CModPython: public CGlobalModule {
+class CModPython: public CModule {
 
 	PyObject* m_PyZNCModule;
 	PyObject* m_PyFormatException;
+	vector<PyObject*> m_vpObject;
 
 public:
 
@@ -69,7 +70,7 @@ public:
 			return result;
 	}
 
-	GLOBALMODCONSTRUCTOR(CModPython) {
+	MODCONSTRUCTOR(CModPython) {
 		Py_Initialize();
 		m_PyFormatException = NULL;
 		m_PyZNCModule = NULL;
@@ -127,10 +128,7 @@ public:
 	}
 
 	virtual EModRet OnModuleLoading(const CString& sModName, const CString& sArgs,
-			bool& bSuccess, CString& sRetMsg) {
-		if (!GetUser()) {
-			return CONTINUE;
-		}
+			CModInfo::EModuleType eType, bool& bSuccess, CString& sRetMsg) {
 		PyObject* pyFunc = PyObject_GetAttrString(m_PyZNCModule, "load_module");
 		if (!pyFunc) {
 			sRetMsg = GetPyExceptionStr();
@@ -138,12 +136,14 @@ public:
 			bSuccess = false;
 			return HALT;
 		}
-		PyObject* pyRes = PyObject_CallFunction(pyFunc, const_cast<char*>("ssNNN"),
+		PyObject* pyRes = PyObject_CallFunction(pyFunc, const_cast<char*>("ssiNNNN"),
 				sModName.c_str(),
 				sArgs.c_str(),
-				SWIG_NewInstanceObj(GetUser(), SWIG_TypeQuery("CUser*"), 0),
+				(int)eType,
+				(eType == CModInfo::GlobalModule ? Py_None : SWIG_NewInstanceObj(GetUser(), SWIG_TypeQuery("CUser*"), 0)),
+				(eType == CModInfo::NetworkModule ? SWIG_NewInstanceObj(GetNetwork(), SWIG_TypeQuery("CIRCNetwork*"), 0) : Py_None),
 				CPyRetString::wrap(sRetMsg),
-				SWIG_NewInstanceObj(reinterpret_cast<CGlobalModule*>(this), SWIG_TypeQuery("CGlobalModule*"), 0));
+				SWIG_NewInstanceObj(reinterpret_cast<CModule*>(this), SWIG_TypeQuery("CModule*"), 0));
 		if (!pyRes) {
 			sRetMsg = GetPyExceptionStr();
 			DEBUG("modpython: " << sRetMsg);
@@ -174,7 +174,7 @@ public:
 				return HALT;
 		}
 		bSuccess = false;
-		sRetMsg += " unknown value returned by modperl.load_module";
+		sRetMsg += " unknown value returned by modpython.load_module";
 		return HALT;
 	}
 
@@ -252,7 +252,7 @@ public:
 		return HALT;
 	}
 
-	void TryAddModInfo(const CString& sPath, const CString& sName, set<CModInfo>& ssMods, set<CString>& ssAlready) {
+	void TryAddModInfo(const CString& sPath, const CString& sName, set<CModInfo>& ssMods, set<CString>& ssAlready, CModInfo::EModuleType eType) {
 		if (ssAlready.count(sName)) {
 			return;
 		}
@@ -282,51 +282,37 @@ public:
 			return;
 		}
 		Py_CLEAR(pyRes);
-		if (x) {
+		if (x && ModInfo.SupportsType(eType)) {
 			ssMods.insert(ModInfo);
 			ssAlready.insert(sName);
 		}
 	}
 
-	virtual void OnGetAvailableMods(set<CModInfo>& ssMods, bool bGlobal) {
-		if (bGlobal) {
-			return;
-		}
-
+	virtual void OnGetAvailableMods(set<CModInfo>& ssMods, CModInfo::EModuleType eType) {
 		CDir Dir;
 		CModules::ModDirList dirs = CModules::GetModDirs();
 
 		while (!dirs.empty()) {
 			set<CString> already;
 
-			Dir.FillByWildcard(dirs.front().first, "*.py");
+			Dir.Fill(dirs.front().first);
 			for (unsigned int a = 0; a < Dir.size(); a++) {
 				CFile& File = *Dir[a];
 				CString sName = File.GetShortName();
 				CString sPath = File.GetLongName();
 				sPath.TrimSuffix(sName);
-				sName.RightChomp(3);
-				TryAddModInfo(sPath, sName, ssMods, already);
-			}
 
-			Dir.FillByWildcard(dirs.front().first, "*.pyc");
-			for (unsigned int a = 0; a < Dir.size(); a++) {
-				CFile& File = *Dir[a];
-				CString sName = File.GetShortName();
-				CString sPath = File.GetLongName();
-				sPath.TrimSuffix(sName);
-				sName.RightChomp(4);
-				TryAddModInfo(sPath, sName, ssMods, already);
-			}
+				if (!File.IsDir()) {
+					if (sName.WildCmp("*.pyc")) {
+						sName.RightChomp(4);
+					} else if (sName.WildCmp("*.py") || sName.WildCmp("*.so")) {
+						sName.RightChomp(3);
+					} else {
+						continue;
+					}
+				}
 
-			Dir.FillByWildcard(dirs.front().first, "*.so");
-			for (unsigned int a = 0; a < Dir.size(); a++) {
-				CFile& File = *Dir[a];
-				CString sName = File.GetShortName();
-				CString sPath = File.GetLongName();
-				sPath.TrimSuffix(sName);
-				sName.RightChomp(3);
-				TryAddModInfo(sPath, sName, ssMods, already);
+				TryAddModInfo(sPath, sName, ssMods, already, eType);
 			}
 
 			dirs.pop();
@@ -334,28 +320,15 @@ public:
 	}
 
 	virtual ~CModPython() {
-		const map<CString, CUser*>& users = CZNC::Get().GetUserMap();
-		for (map<CString, CUser*>::const_iterator i = users.begin(); i != users.end(); ++i) {
-			CModules& M = i->second->GetModules();
-			bool cont;
-			do {
-				cont = false;
-				for (CModules::iterator it = M.begin(); it != M.end(); ++it) {
-					CModule* m = *it;
-					CPyModule* mod = AsPyModule(m);
-					if (mod) {
-						cont = true;
-						bool bSuccess = false;
-						CString sRetMsg;
-						OnModuleUnloading(mod, bSuccess, sRetMsg);
-						if (!bSuccess) {
-							DEBUG("Error unloading python module in ~CModPython: " << sRetMsg);
-						}
-						break;
-					}
-				}
-			} while (cont);
-		}
+		PyObject* pyFunc = PyObject_GetAttrString(m_PyZNCModule, "unload_all");
+        PyObject* pyRes = PyObject_CallFunctionObjArgs(pyFunc, NULL);
+        if (!pyRes) {
+            CString sRetMsg = GetPyExceptionStr();
+            DEBUG("modpython tried to unload all modules in its destructor, but: " << sRetMsg);
+        }
+        Py_CLEAR(pyRes);
+        Py_CLEAR(pyFunc);
+
 		Py_CLEAR(m_PyFormatException);
 		Py_CLEAR(m_PyZNCModule);
 		Py_Finalize();

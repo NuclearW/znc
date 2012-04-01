@@ -5,6 +5,7 @@
 	<div class="section">
 		<input type="hidden" name="submitted" value="1" />
 		<input type="hidden" name="user" value="<? VAR User ?>" />
+		<input type="hidden" name="network" value="<? VAR Network ?>" />
 		<? IF Edit ?><input type="hidden" name="name" value="<? VAR ChanName ?>" /><? ENDIF ?>
 
 		<h3>Channel Info</h3>
@@ -24,7 +25,7 @@
 
 				<div class="subsection">
 					<div class="inputlabel">Buffer Count:</div>
-					<div><input type="text" name="buffercount" value="<? VAR BufferCount ?>" size="10" /></div>
+					<div><input type="number" name="buffercount" value="<? VAR BufferCount ?>" size="10" min="0" /></div>
 				</div>
 
 				<div class="subsection">

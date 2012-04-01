@@ -1,14 +1,14 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "znc.h"
-#include "User.h"
-#include "IRCSock.h"
+#include <znc/znc.h>
+#include <znc/IRCNetwork.h>
+#include <znc/IRCSock.h>
 
 struct reply {
 	const char *szReply;
@@ -117,6 +117,8 @@ static const struct {
 	// Since there should never be more than one of these going on, this
 	// should work fine and makes the code simpler.
 	{"MODE", {
+		// "You're not a channel operator"
+		{"482", true},
 		// MODE I
 		{"346", false},
 		{"347", true},
@@ -157,6 +159,10 @@ public:
 	{
 		m_pDoing = NULL;
 		m_pReplies = NULL;
+
+		AddHelpCommand();
+		AddCommand("Silent", static_cast<CModCommand::ModCmdFunc>(&CRouteRepliesMod::SilentCommand),
+			"[yes|no]");
 	}
 
 	virtual ~CRouteRepliesMod() {
@@ -249,7 +255,7 @@ public:
 	{
 		CString sCmd = sLine.Token(0).AsUpper();
 
-		if (!m_pUser->GetIRCSock())
+		if (!m_pNetwork->GetIRCSock())
 			return CONTINUE;
 
 		if (sCmd.Equals("MODE")) {
@@ -306,9 +312,10 @@ public:
 	{
 		// The timer will be deleted after this by the event loop
 
-		if (GetNV("silent_timeouts") != "yes") {
+		if (!GetNV("silent_timeouts").ToBool()) {
 			PutModule("This module hit a timeout which is possibly a bug.");
-			PutModule("Use \"silent yes\" to disable this message.");
+			PutModule("To disable this message, do \"/msg " + GetModNick()
+					+ " silent yes\"");
 			PutModule("Last request: " + m_sLastRequest);
 			PutModule("Expected replies: ");
 
@@ -334,7 +341,7 @@ private:
 
 		// 353 needs special treatment due to NAMESX and UHNAMES
 		if (bIsRaw353)
-			GetUser()->GetIRCSock()->ForwardRaw353(sLine, m_pDoing);
+			m_pNetwork->GetIRCSock()->ForwardRaw353(sLine, m_pDoing);
 		else
 			m_pDoing->PutClient(sLine);
 
@@ -386,27 +393,15 @@ private:
 		it->second.erase(it->second.begin());
 	}
 
-	virtual void OnModCommand(const CString& sCommand) {
-		const CString sCmd = sCommand.Token(0);
-		const CString sArgs = sCommand.Token(1, true);
+	void SilentCommand(const CString& sLine) {
+		const CString sValue = sLine.Token(1);
 
-		if (sCmd.Equals("silent")) {
-			if (sArgs.Equals("yes")) {
-				SetNV("silent_timeouts", "yes");
-				PutModule("Disabled timeout messages");
-			} else if (sArgs.Equals("no")) {
-				DelNV("silent_timeouts");
-				PutModule("Enabled timeout messages");
-			} else if (sArgs.empty()) {
-				if (GetNV("silent_timeouts") == "yes")
-					PutModule("Timeout messages are disabled");
-				else
-					PutModule("Timeout message are enabled");
-			} else
-				PutModule("Invalid argument");
-		} else {
-			PutModule("Available commands: silent [yes/no], silent");
+		if (!sValue.empty()) {
+			SetNV("silent_timeouts", sValue);
 		}
+
+		CString sPrefix = GetNV("silent_timeouts").ToBool() ? "dis" : "en";
+		PutModule("Timeout messages are " + sPrefix + "abled.");
 	}
 
 	CClient            *m_pDoing;
@@ -426,4 +421,4 @@ template<> void TModInfo<CRouteRepliesMod>(CModInfo& Info) {
 	Info.SetWikiPage("route_replies");
 }
 
-MODULEDEFS(CRouteRepliesMod, "Send replies (e.g. to /who) to the right client only")
+NETWORKMODULEDEFS(CRouteRepliesMod, "Send replies (e.g. to /who) to the right client only")

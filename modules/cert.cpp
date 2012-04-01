@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -8,10 +8,10 @@
 
 #define REQUIRESSL
 
-#include "FileUtils.h"
-#include "User.h"
-#include "Modules.h"
-#include "IRCSock.h"
+#include <znc/FileUtils.h>
+#include <znc/User.h>
+#include <znc/Modules.h>
+#include <znc/IRCSock.h>
 
 class CCertMod : public CModule {
 public:
@@ -29,7 +29,7 @@ public:
 		} else {
 			PutModule("You do not have a certificate. Please use the web interface to add a certificate");
 			if (m_pUser->IsAdmin()) {
-				PutModule("Alternatively you can either place one at " + PemFile() + " or use the GENERATE command to generate a new certificate");
+				PutModule("Alternatively you can either place one at " + PemFile());
 			}
 		}
 	}
@@ -69,15 +69,15 @@ public:
 			CFile fPemFile(PemFile());
 
 			if (fPemFile.Open(O_WRONLY | O_TRUNC | O_CREAT)) {
-				fPemFile.Write(WebSock.GetParam("cert"));
+				fPemFile.Write(WebSock.GetParam("cert", true, ""));
 				fPemFile.Close();
 			}
 
-			WebSock.Redirect("/mods/cert/");
+			WebSock.Redirect(GetWebPath());
 			return true;
 		} else if (sPageName == "delete") {
 			CFile::Delete(PemFile());
-			WebSock.Redirect("/mods/cert/");
+			WebSock.Redirect(GetWebPath());
 			return true;
 		}
 
@@ -86,7 +86,8 @@ public:
 };
 
 template<> void TModInfo<CCertMod>(CModInfo& Info) {
+	Info.AddType(CModInfo::NetworkModule);
 	Info.SetWikiPage("cert");
 }
 
-MODULEDEFS(CCertMod, "Use a ssl certificate to connect to a server")
+USERMODULEDEFS(CCertMod, "Use a ssl certificate to connect to a server")

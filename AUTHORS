@@ -6,7 +6,8 @@ Uli Schlachter <psychon@znc.in>
 SilverLeo
 kroimon <znc@kroimon.de>
 flakes
-Alexey "DarthGandalf" Sokolov (http://asokolov.co.cc/)
+Alexey "DarthGandalf" Sokolov
+Kyle Fuller <inbox@kylefuller.co.uk>
 
 These people, in no particular order, have helped develop ZNC, for example by
 sending in patches, writing new modules or finding significant bugs:
@@ -24,10 +25,11 @@ cnu - master of destruction (security issues)
 Ingmar "KiNgMaR" Runge <mail@irsoft.de>
 Michael "Svedrin" Ziegler <diese-addy@funzt-halt.net>
 Robert Lacroix (http://www.robertlacroix.com)
-zynox
 Martin "Nirjen" Martimeo <martin@martimeo.de>
 Reed Loden <reed@reedloden.com>
 Brian Campbell (bcampbell@splafinga.com)
 Joshua M. Clulow (http://sysmgr.org)
 evaryont <colin@evaryont.me>
 Michael "adgar" Edgar <adgar@carboni.ca>
+
+If you did something useful and want to be listed here too, add yourself and submit the patch.

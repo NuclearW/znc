@@ -1,12 +1,13 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "User.h"
+#include <znc/Modules.h>
+#include <znc/User.h>
 
 class CRawMod : public CModule {
 public:
@@ -30,7 +31,8 @@ public:
 
 template<> void TModInfo<CRawMod>(CModInfo& Info) {
 	Info.SetWikiPage("raw");
+	Info.AddType(CModInfo::UserModule);
 }
 
-MODULEDEFS(CRawMod, "View all of the raw traffic")
+NETWORKMODULEDEFS(CRawMod, "View all of the raw traffic")
 

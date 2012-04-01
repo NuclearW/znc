@@ -1,21 +1,22 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "Client.h"
-#include "FileUtils.h"
-#include "Server.h"
-#include "User.h"
+#include <znc/Client.h>
+#include <znc/FileUtils.h>
+#include <znc/Server.h>
+#include <znc/IRCNetwork.h>
+#include <znc/User.h>
 
 #include <syslog.h>
 
-class CAdminLogMod : public CGlobalModule {
+class CAdminLogMod : public CModule {
 public:
-	GLOBALMODCONSTRUCTOR(CAdminLogMod) {
+	MODCONSTRUCTOR(CAdminLogMod) {
 		openlog("znc", LOG_PID, LOG_DAEMON);
 	}
 
@@ -42,11 +43,11 @@ public:
 	}
 
 	virtual void OnIRCConnected() {
-		Log("[" + m_pUser->GetUserName() + "] connected to IRC: " + m_pUser->GetCurrentServer()->GetName());
+		Log("[" + m_pUser->GetUserName() + "/" + m_pNetwork->GetName() + "] connected to IRC: " + m_pNetwork->GetCurrentServer()->GetName());
 	}
 
 	virtual void OnIRCDisconnected() {
-		Log("[" + m_pUser->GetUserName() + "] disconnected from IRC");
+		Log("[" + m_pUser->GetUserName() + "/" + m_pNetwork->GetName() + "] disconnected from IRC");
 	}
 
 	virtual EModRet OnRaw(CString& sLine) {
@@ -56,8 +57,8 @@ public:
 			CString sError(sLine.substr(6));
 			if (sError.Left(1) == ":")
 				sError.LeftChomp();
-			Log("[" + m_pUser->GetUserName() + "] disconnected from IRC: " +
-			    m_pUser->GetCurrentServer()->GetName() + " [" + sError + "]", LOG_NOTICE);
+			Log("[" + m_pUser->GetUserName() + "/" + m_pNetwork->GetName() + "] disconnected from IRC: " +
+			    m_pNetwork->GetCurrentServer()->GetName() + " [" + sError + "]", LOG_NOTICE);
 		}
 		return CONTINUE;
         }

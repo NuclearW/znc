@@ -1,16 +1,17 @@
 /*
- * Copyright (C) 2008-2011  See the AUTHORS file for details.
+ * Copyright (C) 2008-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "Modules.h"
-#include "User.h"
-#include "IRCSock.h"
-#include "Nick.h"
-#include "Chan.h"
+#include <znc/Modules.h>
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
+#include <znc/IRCSock.h>
+#include <znc/Nick.h>
+#include <znc/Chan.h>
 
 #ifndef Q_DEBUG_COMMUNICATION
 	#define Q_DEBUG_COMMUNICATION 0
@@ -39,7 +40,7 @@ public:
 
 		if (IsIRCConnected()) {
 			// check for usermode +x if we are already connected
-			set<unsigned char> scUserModes = GetUser()->GetIRCSock()->GetUserModes();
+			set<unsigned char> scUserModes = m_pNetwork->GetIRCSock()->GetUserModes();
 			if (scUserModes.find('x') != scUserModes.end())
 				m_bCloaked = true;
 
@@ -254,7 +255,7 @@ private:
 			return;
 
 		PutModule("Cloak: Trying to cloak your hostname, setting +x...");
-		PutIRC("MODE " + GetUser()->GetIRCSock()->GetNick() + " +x");
+		PutIRC("MODE " + m_pNetwork->GetIRCSock()->GetNick() + " +x");
 	}
 
 	void WhoAmI() {
@@ -404,12 +405,12 @@ private:
 
 /* Utility Functions */
 	bool IsIRCConnected() {
-		CIRCSock* pIRCSock = GetUser()->GetIRCSock();
+		CIRCSock* pIRCSock = m_pNetwork->GetIRCSock();
 		return pIRCSock && pIRCSock->IsAuthed();
 	}
 
 	bool IsSelf(const CNick& Nick) {
-		return Nick.GetNick().Equals(m_pUser->GetCurNick());
+		return Nick.GetNick().Equals(m_pNetwork->GetCurNick());
 	}
 
 	bool PackHex(const CString& sHex, CString& sPackedHex) {
@@ -487,4 +488,4 @@ template<> void TModInfo<CQModule>(CModInfo& Info) {
 	Info.SetWikiPage("Q");
 }
 
-MODULEDEFS(CQModule, "Auths you with QuakeNet's Q bot.")
+NETWORKMODULEDEFS(CQModule, "Auths you with QuakeNet's Q bot.")

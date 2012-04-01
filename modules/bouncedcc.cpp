@@ -1,17 +1,18 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "zncconfig.h"
-#include "znc.h"
-#include "User.h"
-#include "Modules.h"
-#include "Socket.h"
-#include "FileUtils.h"
+#include <znc/zncconfig.h>
+#include <znc/znc.h>
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
+#include <znc/Modules.h>
+#include <znc/Socket.h>
+#include <znc/FileUtils.h>
 
 class CBounceDCCMod;
 
@@ -33,7 +34,7 @@ public:
 	virtual void Timeout();
 	virtual void ConnectionRefused();
 	virtual void ReachedMaxBuffer();
-	virtual void SockError(int iErrno);
+	virtual void SockError(int iErrno, const CString& sDescription);
 	virtual void Connected();
 	virtual void Disconnected();
 	virtual Csock* GetSockObj(const CString& sHost, unsigned short uPort);
@@ -207,7 +208,7 @@ public:
 	}
 
 	virtual EModRet OnPrivCTCP(CNick& Nick, CString& sMessage) {
-		if (sMessage.Equals("DCC ", false, 4) && m_pUser->IsUserAttached()) {
+		if (sMessage.Equals("DCC ", false, 4) && m_pNetwork->IsUserAttached()) {
 			// DCC CHAT chat 2453612361 44592
 			CString sType = sMessage.Token(1);
 			CString sFile = sMessage.Token(2);
@@ -220,14 +221,14 @@ public:
 				unsigned short uBNCPort = CDCCBounce::DCCRequest(FromNick.GetNick(), uLongIP, uPort, "", true, this, CUtils::GetIP(uLongIP));
 				if (uBNCPort) {
 					CString sIP = GetLocalDCCIP();
-					m_pUser->PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + m_pUser->GetNick() + " :\001DCC CHAT chat " + CString(CUtils::GetLongIP(sIP)) + " " + CString(uBNCPort) + "\001");
+					PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + m_pNetwork->GetCurNick() + " :\001DCC CHAT chat " + CString(CUtils::GetLongIP(sIP)) + " " + CString(uBNCPort) + "\001");
 				}
 			} else if (sType.Equals("SEND")) {
 				// DCC SEND readme.txt 403120438 5550 1104
 				unsigned short uBNCPort = CDCCBounce::DCCRequest(Nick.GetNick(), uLongIP, uPort, sFile, false, this, CUtils::GetIP(uLongIP));
 				if (uBNCPort) {
 					CString sIP = GetLocalDCCIP();
-					m_pUser->PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + m_pUser->GetNick() + " :\001DCC SEND " + sFile + " " + CString(CUtils::GetLongIP(sIP)) + " " + CString(uBNCPort) + " " + CString(uFileSize) + "\001");
+					PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + m_pNetwork->GetCurNick() + " :\001DCC SEND " + sFile + " " + CString(CUtils::GetLongIP(sIP)) + " " + CString(uBNCPort) + " " + CString(uFileSize) + "\001");
 				}
 			} else if (sType.Equals("RESUME")) {
 				// Need to lookup the connection by port, filter the port, and forward to the user
@@ -238,7 +239,7 @@ public:
 					CDCCBounce* pSock = (CDCCBounce*) *it;
 
 					if (pSock->GetLocalPort() == uResumePort) {
-						m_pUser->PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + m_pClient->GetNick() + " :\001DCC " + sType + " " + sFile + " " + CString(pSock->GetUserPort()) + " " + sMessage.Token(4) + "\001");
+						PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + m_pNetwork->GetCurNick() + " :\001DCC " + sType + " " + sFile + " " + CString(pSock->GetUserPort()) + " " + sMessage.Token(4) + "\001");
 					}
 				}
 			} else if (sType.Equals("ACCEPT")) {
@@ -248,7 +249,7 @@ public:
 					CDCCBounce* pSock = (CDCCBounce*) *it;
 
 					if (pSock->GetUserPort() == sMessage.Token(3).ToUShort()) {
-						m_pUser->PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + m_pClient->GetNick() + " :\001DCC " + sType + " " + sFile + " " + CString(pSock->GetLocalPort()) + " " + sMessage.Token(4) + "\001");
+						PutUser(":" + Nick.GetNickMask() + " PRIVMSG " + m_pNetwork->GetCurNick() + " :\001DCC " + sType + " " + sFile + " " + CString(pSock->GetLocalPort()) + " " + sMessage.Token(4) + "\001");
 					}
 				}
 			}
@@ -376,7 +377,7 @@ void CDCCBounce::ConnectionRefused() {
 	m_pModule->PutModule("DCC " + sType + " Bounce (" + m_sRemoteNick + "): Connection Refused while connecting" + sHost);
 }
 
-void CDCCBounce::SockError(int iErrno) {
+void CDCCBounce::SockError(int iErrno, const CString& sDescription) {
 	DEBUG(GetSockName() << " == SockError(" << iErrno << ")");
 	CString sType = (m_bIsChat) ? "Chat" : "Xfer";
 
@@ -386,13 +387,14 @@ void CDCCBounce::SockError(int iErrno) {
 			sHost = "[" + sHost + " " + CString(Csock::GetPort()) + "]";
 		}
 
-		m_pModule->PutModule("DCC " + sType + " Bounce (" + m_sRemoteNick + "): Socket error [" + CString(strerror(iErrno)) + "]" + sHost);
+		m_pModule->PutModule("DCC " + sType + " Bounce (" + m_sRemoteNick + "): Socket error [" + sDescription + "]" + sHost);
 	} else {
-		m_pModule->PutModule("DCC " + sType + " Bounce (" + m_sRemoteNick + "): Socket error [" + CString(strerror(iErrno)) + "] [" + Csock::GetLocalIP() + ":" + CString(Csock::GetLocalPort()) + "]");
+		m_pModule->PutModule("DCC " + sType + " Bounce (" + m_sRemoteNick + "): Socket error [" + sDescription + "] [" + Csock::GetLocalIP() + ":" + CString(Csock::GetLocalPort()) + "]");
 	}
 }
 
 void CDCCBounce::Connected() {
+	SetTimeout(0);
 	DEBUG(GetSockName() << " == Connected()");
 }
 
@@ -420,9 +422,7 @@ Csock* CDCCBounce::GetSockObj(const CString& sHost, unsigned short uPort) {
 	pRemoteSock->SetRemote(true);
 	pSock->SetRemote(false);
 
-	if (!CZNC::Get().GetManager().Connect(m_sConnectIP, m_uRemotePort, "DCC::" + CString((m_bIsChat) ? "Chat" : "XFER") + "::Remote::" + m_sRemoteNick, 60, false, m_sLocalIP, pRemoteSock)) {
-		pRemoteSock->Close();
-	}
+	CZNC::Get().GetManager().Connect(m_sConnectIP, m_uRemotePort, "DCC::" + CString((m_bIsChat) ? "Chat" : "XFER") + "::Remote::" + m_sRemoteNick, 60, false, m_sLocalIP, pRemoteSock);
 
 	pSock->SetSockName(GetSockName());
 	return pSock;
@@ -451,5 +451,5 @@ unsigned short CDCCBounce::DCCRequest(const CString& sNick, unsigned long uLongI
 
 
 
-MODULEDEFS(CBounceDCCMod, "Bounce DCC module")
+USERMODULEDEFS(CBounceDCCMod, "Bounces DCC transfers through ZNC instead of sending them directly to the user. ")
 

@@ -1,13 +1,13 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "znc.h"
-#include "User.h"
+#include <znc/znc.h>
+#include <znc/User.h>
 
 class CClientNotifyMod : public CModule {
 protected:
@@ -55,7 +55,7 @@ public:
 		if(!m_bNewOnly || m_sClientsSeen.find(m_pClient->GetRemoteIP()) == m_sClientsSeen.end()) {
 			SendNotification("Another client authenticated as your user. "
 				"Use the 'ListClients' command to see all " +
-				CString(m_pUser->GetClients().size())  + " clients.");
+				CString(m_pUser->GetAllClients().size())  + " clients.");
 
 			// the set<> will automatically disregard duplicates:
 			m_sClientsSeen.insert(m_pClient->GetRemoteIP());
@@ -66,7 +66,7 @@ public:
 		if(m_bOnDisconnect) {
 			SendNotification("A client disconnected from your user. "
 				"Use the 'ListClients' command to see the " +
-				CString(m_pUser->GetClients().size()) + " remaining client(s).");
+				CString(m_pUser->GetAllClients().size()) + " remaining client(s).");
 		}
 	}
 
@@ -106,5 +106,5 @@ template<> void TModInfo<CClientNotifyMod>(CModInfo& Info) {
 	Info.SetWikiPage("clientnotify");
 }
 
-MODULEDEFS(CClientNotifyMod, "Notifies you when another IRC client logs into or out of your account. Configurable.")
+USERMODULEDEFS(CClientNotifyMod, "Notifies you when another IRC client logs into or out of your account. Configurable.")
 

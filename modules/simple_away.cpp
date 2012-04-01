@@ -1,12 +1,13 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "User.h"
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
 
 #define SIMPLE_AWAY_DEFAULT_REASON "Auto away at %s"
 #define SIMPLE_AWAY_DEFAULT_TIME   60
@@ -73,7 +74,7 @@ public:
 	}
 
 	virtual void OnIRCConnected() {
-		if (m_pUser->IsUserAttached())
+		if (m_pNetwork->IsUserAttached())
 			SetBack();
 		else
 			SetAway(false);
@@ -85,7 +86,7 @@ public:
 
 	virtual void OnClientDisconnect() {
 		/* There might still be other clients */
-		if (!m_pUser->IsUserAttached())
+		if (!m_pNetwork->IsUserAttached())
 			SetAway();
 	}
 
@@ -189,9 +190,7 @@ private:
 			sReason = SIMPLE_AWAY_DEFAULT_REASON;
 
 		time_t iTime = time(NULL);
-		iTime += (time_t)(m_pUser->GetTimezoneOffset() * 60 * 60); // offset is in hours
-		CString sTime = ctime(&iTime);
-		sTime.Trim();
+		CString sTime = CUtils::CTime(iTime, m_pUser->GetTimezone());
 		sReason.Replace("%s", sTime);
 
 		return sReason;
@@ -220,4 +219,4 @@ template<> void TModInfo<CSimpleAway>(CModInfo& Info) {
 	Info.SetWikiPage("simple_away");
 }
 
-MODULEDEFS(CSimpleAway, "Auto away when last client disconnects")
+NETWORKMODULEDEFS(CSimpleAway, "Auto away when last client disconnects")

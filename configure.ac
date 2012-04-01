@@ -1,11 +1,17 @@
+dnl This redefines AC_PROG_CC to a version which errors out instead. This is
+dnl because all our tests should be done with the C++ compiler. This should
+dnl catch stuff which accidentally uses the C compiler.
+AC_DEFUN([AC_PROG_CC], [m4_errprint(__file__:__line__[: Something is trying to use the C compiler. Since this is a C++ project, this should not happen!
+])m4_exit(1)])
+
 dnl Needed for AC_PATH_PROGS_FEATURE_CHECK which was added in 2.62
 AC_PREREQ([2.62])
 dnl Keep the version number in sync with main.h!
-AC_INIT([znc], [0.099])
+AC_INIT([znc], [0.207])
 AC_CONFIG_MACRO_DIR([m4])
-AC_CONFIG_SRCDIR([znc.cpp])
+AC_CONFIG_SRCDIR([src/znc.cpp])
 AC_LANG([C++])
-AC_CONFIG_HEADERS([zncconfig.h])
+AC_CONFIG_HEADERS([include/znc/zncconfig.h])
 AH_TOP([#ifndef ZNCCONFIG_H
 #define ZNCCONFIG_H])
 AH_BOTTOM([#endif /* ZNCCONFIG_H */])
@@ -28,6 +34,7 @@ AC_PROG_GREP
 AC_PROG_SED
 AC_CANONICAL_HOST
 AC_SYS_LARGEFILE
+ZNC_VISIBILITY
 
 appendLib () {
 	if test "$LIBS" != ""; then
@@ -85,10 +92,6 @@ esac
 AC_ARG_WITH( [openssl],
 	AS_HELP_STRING([--with-openssl=DIR], [openssl installation prefix]),
 	[OPENSSL=$withval],)
-AC_ARG_ENABLE( [extra],
-	AS_HELP_STRING([--enable-extra], [enable some extra modules]),
-	[EXTRA="$enableval"],
-	[EXTRA="no"])
 AC_ARG_ENABLE( [debug],
 	AS_HELP_STRING([--enable-debug], [enable debugging]),
 	[DEBUG="$enableval"],
@@ -126,12 +129,12 @@ AC_ARG_ENABLE( [optimization],
 			decrease memory usage while compiling]),
 	[OPTIMIZE="$enableval"],
 	[OPTIMIZE="yes"])
-AC_ARG_ENABLE( [c-ares],
-	AS_HELP_STRING([--disable-c-ares], [disable c-ares usage]),
-	[ARES="$enableval"],
-	[ARES="auto"])
+AC_ARG_ENABLE( [tdns],
+	AS_HELP_STRING([--disable-tdns], [disable threads usage for DNS resolving]),
+	[TDNS="$enableval"],
+	[TDNS="auto"])
 AC_ARG_ENABLE( [run-from-source],
-	AS_HELP_STRING([--enable-run-from-source], [znc will be runnable without installation]),
+	AS_HELP_STRING([--enable-run-from-source], [ZNC will be runnable without installation]),
 	[if test "x$enableval" = "xyes" ; then
 		AC_DEFINE([RUN_FROM_SOURCE], [1],
 			  [Define if ZNC should be runnable without installation])
@@ -142,9 +145,12 @@ AC_ARG_ENABLE( [poll],
 	AS_HELP_STRING([--disable-poll], [use select() instead of poll()]),
 	[POLL="$enableval"],
 	[POLL="yes"])
+AC_ARG_ENABLE([add-networks],
+	AS_HELP_STRING([--enable-add-networks], [allow non-admins to add networks]),
+	[ if test x"$enableval" = "xyes" ; then appendCXX "-DENABLE_ADD_NETWORK" ; fi ])
 
 if test "$DEBUG" != "no"; then
-	appendCXX -ggdb
+	appendCXX -ggdb3
 	AC_DEFINE([_DEBUG], [1], [Define for debugging])
 	# These enable some debug options in g++'s STL, e.g. invalid use of iterators
 	AC_DEFINE([_GLIBCXX_DEBUG], [1], [Enable extra debugging checks in libstdc++])
@@ -194,32 +200,24 @@ PKG_PROG_PKG_CONFIG()
 AC_SEARCH_LIBS([dlopen], [dl], [],
 		[AC_MSG_ERROR([Could not find dlopen. ZNC will not work on this box until you upgrade this ancient system or at least install the necessary system libraries.])])
 
-# ----- Check for c-ares
+# ----- Check for pthreads
 
-if test "x$ARES" != "xno"; then
-	old_ARES=$ARES
-	if test -z "$PKG_CONFIG"
-	then
-		ARES=no
-		ZNC_AUTO_FAIL([ARES],
-			[pkg-config not found. Try --disable-c-ares.
-Disabling c-ares may result in a slight performance decrease but will not have any other side-effects],
-			[pkg-config was not found and thus c-ares was disabled])
-	else
-		PKG_CHECK_MODULES([c_ares], [libcares >= 1.5.0],, ARES=no)
-
-		if test "x$ARES" = "xno" ; then
-			ZNC_AUTO_FAIL([ARES],
-				[c-ares not found. Try --disable-c-ares.
-Disabling c-ares may result in a slight performance decrease but will not have any other side-effects],
-				[c-ares was not found and thus disabled])
-		else
-			AC_DEFINE([HAVE_C_ARES], [1], [Define if c-ares is enabled])
-			appendCXX $c_ares_CFLAGS
-			appendLib $c_ares_LIBS
-			ARES=yes
-		fi
-	fi
+if test "x$TDNS" != "xno"; then
+	old_TDNS=$TDNS
+	AX_PTHREAD([
+		TDNS=yes
+		DNS_TEXT=threads
+		AC_DEFINE([HAVE_THREADED_DNS], [1], [Define if threaded DNS is enabled])
+		appendCXX "$PTHREAD_CFLAGS"
+		appendLib "$PTHREAD_LIBS"
+	], [
+		TDNS=no
+		DNS_TEXT=blocking
+		ZNC_AUTO_FAIL([TDNS],
+			[threads not found. Try --disable-tdns.
+Disabling threads may result in a slight performance decrease but will not have any other side-effects],
+			[threads not found, so DNS resolving will be blocking])
+	])
 fi
 
 # ----- Check for openssl
@@ -268,6 +266,7 @@ AC_ARG_WITH( [module-data-prefix],
 	[DATADIR="${datadir}/znc"] )
 
 appendMod "$CXXFLAGS"
+appendMod "$CFLAG_VISIBILITY"
 
 if test -z "$ISSUN" -a -z "$ISDARWIN" -a -z "$ISCYGWIN"; then
 	# This is an unknown compiler flag on some OS
@@ -279,7 +278,7 @@ if test -z "$ISCYGWIN" ; then
 	# warning: -fPIC ignored for target (all code is position independent)
 	appendMod -fPIC
 else
-	# But cygwin does want most of znc in a shared lib
+	# But cygwin does want most of ZNC in a shared lib
 	LIBZNC="libznc.dll"
 	LIBZNCDIR="$bindir"
 fi
@@ -453,31 +452,28 @@ then
 	LIBS="$my_saved_LIBS"
 fi
 
-if test x"$EXTRA" = "xyes"
+AC_CHECK_FUNC( iconv, CHARSET=1 )
+AC_CHECK_LIB( iconv, iconv_open, LIBICONV=-liconv ; CHARSET=1 )
+if test "x$CHARSET" = "x1"
 then
-	AC_CHECK_FUNC( iconv, CHARSET=1 )
-	AC_CHECK_LIB( iconv, iconv_open, LIBICONV=-liconv ; CHARSET=1 )
-	if test "x$CHARSET" = "x1"
-	then
-		AC_MSG_CHECKING([whether iconv expects a const second argument])
-		AC_COMPILE_IFELSE([
-			AC_LANG_PROGRAM([[
-		#include <iconv.h>
-		]], [[
-			const char input[] = "X"; const char *inptr = input; size_t inbytes = 1;
-			char buf[1]; char *outptr = buf; size_t outbytes = 1;
-			iconv_t ic = iconv_open("ISO8859-1", "UTF8");
-			iconv(ic, (char**)&inptr, &inbytes, &outptr, &outbytes);
-		]])], [
-			AC_MSG_RESULT([no])
-			appendMod -DICONV_CONST=
-		], [
-			AC_MSG_RESULT([yes])
-			appendMod -DICONV_CONST=const
-		])
-	else
-		AC_MSG_WARN([libiconv was not found, disabling the charset module])
-	fi
+	AC_MSG_CHECKING([whether iconv expects a const second argument])
+	AC_COMPILE_IFELSE([
+		AC_LANG_PROGRAM([[
+	#include <iconv.h>
+	]], [[
+		const char input[] = "X"; const char *inptr = input; size_t inbytes = 1;
+		char buf[1]; char *outptr = buf; size_t outbytes = 1;
+		iconv_t ic = iconv_open("ISO8859-1", "UTF8");
+		iconv(ic, (char**)&inptr, &inbytes, &outptr, &outbytes);
+	]])], [
+		AC_MSG_RESULT([no])
+		appendMod -DICONV_CONST=
+	], [
+		AC_MSG_RESULT([yes])
+		appendMod -DICONV_CONST=const
+	])
+else
+	AC_MSG_WARN([libiconv was not found, disabling the charset module])
 fi
 
 AC_CACHE_CHECK([for GNU make], [ac_cv_path_GNUMAKE], [
@@ -501,7 +497,6 @@ AC_SUBST([LIBZNC])
 AC_SUBST([LIBZNCDIR])
 AC_SUBST([MODLINK])
 AC_SUBST([NOSSL])
-AC_SUBST([EXTRA])
 AC_SUBST([TCL_FLAGS])
 AC_SUBST([SASL])
 AC_SUBST([CHARSET])
@@ -524,13 +519,13 @@ AC_CONFIG_FILES([test/Makefile])
 AC_OUTPUT
 
 echo
-echo znc AC_PACKAGE_VERSION configured
+echo ZNC AC_PACKAGE_VERSION configured
 echo
 echo "prefix:       $prefix"
 echo "debug:        $DEBUG"
 echo "ipv6:         $IPV6"
 echo "openssl:      $SSL"
-echo "c-ares:       $ARES"
+echo "dns:          $DNS_TEXT"
 echo "perl:         $PERL"
 echo "python:       $PYTHON"
 echo "swig:         $USESWIG"
@@ -539,7 +534,6 @@ if test x"$SASL" = "x" ; then
 else
 	echo "sasl:         yes"
 fi
-echo "extra:        $EXTRA"
 if test x"$TCL_FLAGS" = "x" ; then
 	echo "tcl:          no"
 else

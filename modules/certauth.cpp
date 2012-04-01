@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -8,14 +8,14 @@
 
 #define REQUIRESSL
 
-#include "Modules.h"
-#include "User.h"
-#include "Listener.h"
-#include "znc.h"
+#include <znc/Modules.h>
+#include <znc/User.h>
+#include <znc/Listener.h>
+#include <znc/znc.h>
 
-class CSSLClientCertMod : public CGlobalModule {
+class CSSLClientCertMod : public CModule {
 public:
-	GLOBALMODCONSTRUCTOR(CSSLClientCertMod) {
+	MODCONSTRUCTOR(CSSLClientCertMod) {
 		AddHelpCommand();
 		AddCommand("Add",  static_cast<CModCommand::ModCmdFunc>(&CSSLClientCertMod::HandleAddCommand),
 			"[pubkey]", "If pubkey is not provided will use the current key");
@@ -249,7 +249,7 @@ public:
 			return true;
 		} else if (sPageName == "add") {
 			AddKey(pUser, WebSock.GetParam("key"));
-			WebSock.Redirect("/mods/certauth/");
+			WebSock.Redirect(GetWebPath());
 			return true;
 		} else if (sPageName == "delete") {
 			MSCString::iterator it = m_PubKeys.find(pUser->GetUserName());
@@ -263,7 +263,7 @@ public:
 				}
 			}
 
-			WebSock.Redirect("/mods/certauth/");
+			WebSock.Redirect(GetWebPath());
 			return true;
 		}
 

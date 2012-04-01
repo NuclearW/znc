@@ -1,17 +1,21 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "Chan.h"
-#include "User.h"
+#include <znc/Chan.h>
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
 
 class CAutoCycleMod : public CModule {
 public:
-	MODCONSTRUCTOR(CAutoCycleMod) {}
+	MODCONSTRUCTOR(CAutoCycleMod) {
+		m_recentlyCycled.SetTTL(15 * 1000);
+	}
+
 	virtual ~CAutoCycleMod() {}
 
 	virtual bool OnLoad(const CString& sArgs, CString& sMessage) {
@@ -119,14 +123,20 @@ protected:
 		if (!IsAutoCycle(Channel.GetName()))
 			return;
 
+		// Did we recently annoy opers via cycling of an empty channel?
+		if (m_recentlyCycled.HasItem(Channel.GetName()))
+			return;
+
 		// Is there only one person left in the channel?
 		if (Channel.GetNickCount() != 1)
 			return;
 
 		// Is that person us and we don't have op?
 		const CNick& pNick = Channel.GetNicks().begin()->second;
-		if (!pNick.HasPerm(CChan::Op) && pNick.GetNick().Equals(m_pUser->GetCurNick()))
+		if (!pNick.HasPerm(CChan::Op) && pNick.GetNick().Equals(m_pNetwork->GetCurNick())) {
 			Channel.Cycle();
+			m_recentlyCycled.AddItem(Channel.GetName());
+		}
 	}
 
 	bool AlreadyAdded(const CString& sInput) {
@@ -222,10 +232,11 @@ protected:
 private:
 	vector<CString> m_vsChans;
 	vector<CString> m_vsNegChans;
+	TCacheMap<CString> m_recentlyCycled;
 };
 
 template<> void TModInfo<CAutoCycleMod>(CModInfo& Info) {
 	Info.SetWikiPage("autocycle");
 }
 
-MODULEDEFS(CAutoCycleMod, "Rejoins channels to gain Op if you're the only user left")
+USERMODULEDEFS(CAutoCycleMod, "Rejoins channels to gain Op if you're the only user left")

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  * Copyright (C) 2008 Michael "Svedrin" Ziegler diese-addy@funzt-halt.net
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -7,9 +7,10 @@
  * by the Free Software Foundation.
  */
 
-#include "Modules.h"
-#include "IRCSock.h"
-#include "User.h"
+#include <znc/Modules.h>
+#include <znc/IRCNetwork.h>
+#include <znc/IRCSock.h>
+#include <znc/User.h>
 
 class CAutoReplyMod : public CModule {
 public:
@@ -38,11 +39,15 @@ public:
 			SetReply(sReply);
 		}
 
+		if (m_pNetwork) {
+			return m_pNetwork->ExpandString(sReply);
+		}
+
 		return m_pUser->ExpandString(sReply);
 	}
 
 	void Handle(const CString& sNick) {
-		CIRCSock *pIRCSock = GetUser()->GetIRCSock();
+		CIRCSock *pIRCSock = m_pNetwork->GetIRCSock();
 		if (!pIRCSock)
 			// WTF?
 			return;
@@ -51,16 +56,11 @@ public:
 		if (m_Messaged.HasItem(sNick))
 			return;
 
-		if (m_pUser->IsUserAttached())
+		if (m_pNetwork->IsUserAttached())
 			return;
 
 		m_Messaged.AddItem(sNick);
 		PutIRC("PRIVMSG " + sNick + " :" + GetReply());
-	}
-
-	virtual EModRet OnPrivNotice(CNick& Nick, CString& sMessage) {
-		Handle(Nick.GetNick());
-		return CONTINUE;
 	}
 
 	virtual EModRet OnPrivMsg(CNick& Nick, CString& sMessage) {
@@ -90,7 +90,8 @@ private:
 
 template<> void TModInfo<CAutoReplyMod>(CModInfo& Info) {
 	Info.SetWikiPage("autoreply");
+	Info.AddType(CModInfo::NetworkModule);
 }
 
-MODULEDEFS(CAutoReplyMod, "Reply to queries when you are away")
+USERMODULEDEFS(CAutoReplyMod, "Reply to queries when you are away")
 

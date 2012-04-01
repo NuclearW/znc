@@ -1,12 +1,13 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "User.h"
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
 #include <algorithm>
 
 class CPerform : public CModule {
@@ -50,7 +51,12 @@ class CPerform : public CModule {
 			Table.SetCell("Id", CString(index));
 			Table.SetCell("Perform", *it);
 
-			sExpanded = GetUser()->ExpandString(*it);
+			if (m_pNetwork) {
+				sExpanded = m_pNetwork->ExpandString(*it);
+			} else {
+				sExpanded = GetUser()->ExpandString(*it);
+			}
+
 			if (sExpanded != *it) {
 				Table.SetCell("Expanded", sExpanded);
 			}
@@ -122,7 +128,7 @@ public:
 
 	virtual void OnIRCConnected() {
 		for (VCString::const_iterator it = m_vPerform.begin(); it != m_vPerform.end(); ++it) {
-			PutIRC(GetUser()->ExpandString(*it));
+			PutIRC(m_pNetwork->ExpandString(*it));
 		}
 	}
 
@@ -130,7 +136,7 @@ public:
 
 	virtual bool OnWebRequest(CWebSock& WebSock, const CString& sPageName, CTemplate& Tmpl) {
 		if (sPageName != "index") {
-			// only accept requests to /mods/perform/
+			// only accept requests to index
 			return false;
 		}
 
@@ -167,7 +173,8 @@ private:
 };
 
 template<> void TModInfo<CPerform>(CModInfo& Info) {
+	Info.AddType(CModInfo::UserModule);
 	Info.SetWikiPage("perform");
 }
 
-MODULEDEFS(CPerform, "Keeps a list of commands to be executed when ZNC connects to IRC.")
+NETWORKMODULEDEFS(CPerform, "Keeps a list of commands to be executed when ZNC connects to IRC.")

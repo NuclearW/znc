@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -13,31 +13,38 @@
 #ifdef Pause
 # undef Pause
 #endif
+#ifdef seed
+# undef seed
+#endif
 #include <utility>
-#include "../Utils.h"
-#include "../Socket.h"
-#include "../Modules.h"
-#include "../Nick.h"
-#include "../Chan.h"
-#include "../User.h"
-#include "../Client.h"
-#include "../IRCSock.h"
-#include "../Listener.h"
-#include "../HTTPSock.h"
-#include "../Template.h"
-#include "../WebModules.h"
-#include "../znc.h"
-#include "../Server.h"
-#include "../ZNCString.h"
-#include "../FileUtils.h"
-#include "../ZNCDebug.h"
-#include "../ExecSock.h"
+#include "../include/znc/Utils.h"
+#include "../include/znc/Config.h"
+#include "../include/znc/Socket.h"
+#include "../include/znc/Modules.h"
+#include "../include/znc/Nick.h"
+#include "../include/znc/Chan.h"
+#include "../include/znc/User.h"
+#include "../include/znc/IRCNetwork.h"
+#include "../include/znc/Client.h"
+#include "../include/znc/IRCSock.h"
+#include "../include/znc/Listener.h"
+#include "../include/znc/HTTPSock.h"
+#include "../include/znc/Template.h"
+#include "../include/znc/WebModules.h"
+#include "../include/znc/znc.h"
+#include "../include/znc/Server.h"
+#include "../include/znc/ZNCString.h"
+#include "../include/znc/FileUtils.h"
+#include "../include/znc/ZNCDebug.h"
+#include "../include/znc/ExecSock.h"
 #include "modperl/module.h"
 #define stat struct stat
 %}
 
+%apply long { off_t };
+
 %begin %{
-#include "zncconfig.h"
+#include "znc/zncconfig.h"
 %}
 
 %include <typemaps.i>
@@ -69,29 +76,47 @@ namespace std {
 	argvi++;
 }
 
+%template(VIRCNetworks) std::vector<CIRCNetwork*>;
+%template(VChannels) std::vector<CChan*>;
+/*%template(MNicks) std::map<CString, CNick>;*/
+
+%typemap(out) std::map<CString, CNick> {
+	HV* myhv = newHV();
+	for (std::map<CString, CNick>::const_iterator i = $1.begin(); i != $1.end(); ++i) {
+		SV* val = SWIG_NewInstanceObj(const_cast<CNick*>(&i->second), SWIG_TypeQuery("CNick*"), SWIG_SHADOW);
+		SvREFCNT_inc(val);// it was created mortal
+		hv_store(myhv, i->first.c_str(), i->first.length(), val, 0);
+	}
+	$result = newRV_noinc((SV*)myhv);
+	sv_2mortal($result);
+	argvi++;
+}
+
 #define u_short unsigned short
 #define u_int unsigned int
-#include "../ZNCString.h"
-%include "../defines.h"
-%include "../Utils.h"
-%include "../Csocket.h"
+#include "../include/znc/ZNCString.h"
+%include "../include/znc/defines.h"
+%include "../include/znc/Utils.h"
+%include "../include/znc/Config.h"
+%include "../include/znc/Csocket.h"
 %template(ZNCSocketManager) TSocketManager<CZNCSock>;
-%include "../Socket.h"
-%include "../FileUtils.h"
-%include "../Modules.h"
-%include "../Nick.h"
-%include "../Chan.h"
-%include "../User.h"
-%include "../Client.h"
-%include "../IRCSock.h"
-%include "../Listener.h"
-%include "../HTTPSock.h"
-%include "../Template.h"
-%include "../WebModules.h"
-%include "../znc.h"
-%include "../Server.h"
-%include "../ZNCDebug.h"
-%include "../ExecSock.h"
+%include "../include/znc/Socket.h"
+%include "../include/znc/FileUtils.h"
+%include "../include/znc/Modules.h"
+%include "../include/znc/Nick.h"
+%include "../include/znc/Chan.h"
+%include "../include/znc/User.h"
+%include "../include/znc/IRCNetwork.h"
+%include "../include/znc/Client.h"
+%include "../include/znc/IRCSock.h"
+%include "../include/znc/Listener.h"
+%include "../include/znc/HTTPSock.h"
+%include "../include/znc/Template.h"
+%include "../include/znc/WebModules.h"
+%include "../include/znc/znc.h"
+%include "../include/znc/Server.h"
+%include "../include/znc/ZNCDebug.h"
+%include "../include/znc/ExecSock.h"
 
 %include "modperl/module.h"
 
@@ -153,6 +178,24 @@ namespace std {
 	}
 }
 
+%extend CUser {
+	std::vector<CIRCNetwork*> GetNetworks_() {
+		return $self->GetNetworks();
+	}
+}
+
+%extend CIRCNetwork {
+	std::vector<CChan*> GetChans_() {
+		return $self->GetChans();
+	}
+}
+
+%extend CChan {
+	std::map<CString, CNick> GetNicks_() {
+		return $self->GetNicks();
+	}
+}
+
 /* Web */
 
 %template(StrPair) pair<CString, CString>;
@@ -206,6 +249,19 @@ typedef vector<pair<CString, CString> > VPair;
 	*HALTMODS = *ZNC::CModule::HALTMODS;
 	*HALTCORE = *ZNC::CModule::HALTCORE;
 	*UNLOAD = *ZNC::CModule::UNLOAD;
+
+	package ZNC::CIRCNetwork;
+	*GetChans = *GetChans_;
+
+	package ZNC::CUser;
+	*GetNetworks = *GetNetworks_;
+
+	package ZNC::CChan;
+	sub _GetNicks_ {
+		my $result = GetNicks_(@_);
+		return %$result;
+	}
+	*GetNicks = *_GetNicks_;
 %}
 
 /* vim: set filetype=cpp noexpandtab: */

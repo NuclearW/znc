@@ -1,18 +1,18 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "Chan.h"
-#include "FileUtils.h"
-#include "IRCSock.h"
-#include "Modules.h"
-#include "Nick.h"
-#include "User.h"
-#include "znc.h"
+#include <znc/Chan.h>
+#include <znc/FileUtils.h>
+#include <znc/IRCSock.h>
+#include <znc/Modules.h>
+#include <znc/Nick.h>
+#include <znc/User.h>
+#include <znc/znc.h>
 
 #include "modperl/module.h"
 #include "modperl/swigperlrun.h"
@@ -31,10 +31,10 @@ extern "C" {
 	}
 }
 
-class CModPerl: public CGlobalModule {
+class CModPerl: public CModule {
 	PerlInterpreter *m_pPerl;
 public:
-	GLOBALMODCONSTRUCTOR(CModPerl) {
+	MODCONSTRUCTOR(CModPerl) {
 		m_pPerl = NULL;
 	}
 
@@ -75,15 +75,14 @@ public:
 	}
 
 	virtual EModRet OnModuleLoading(const CString& sModName, const CString& sArgs,
-			bool& bSuccess, CString& sRetMsg) {
-		if (!GetUser()) {
-			return CONTINUE;
-		}
+			CModInfo::EModuleType eType, bool& bSuccess, CString& sRetMsg) {
 		EModRet result = HALT;
 		PSTART;
 		PUSH_STR(sModName);
 		PUSH_STR(sArgs);
+		mXPUSHi(eType);
 		PUSH_PTR(CUser*, GetUser());
+		PUSH_PTR(CIRCNetwork*, GetNetwork());
 		PCALL("ZNC::Core::LoadModule");
 
 		if (SvTRUE(ERRSV)) {
@@ -115,7 +114,7 @@ public:
 		if (pMod) {
 			CString sModName = pMod->GetModName();
 			PSTART;
-			PUSH_PTR(CPerlModule*, pMod);
+			XPUSHs(pMod->GetPerlObj());
 			PCALL("ZNC::Core::UnloadModule");
 			if (SvTRUE(ERRSV)) {
 				bSuccess = false;
@@ -135,6 +134,7 @@ public:
 			bool& bSuccess, CString& sRetMsg) {
 		PSTART;
 		PUSH_STR(sModule);
+		PUSH_PTR(CModInfo*, &ModInfo);
 		PCALL("ZNC::Core::GetModInfo");
 		EModRet result = CONTINUE;
 		if (SvTRUE(ERRSV)) {
@@ -147,12 +147,7 @@ public:
 					break;
 				case Perl_Loaded:
 					result = HALT;
-					if (4 == ret) {
-						ModInfo.SetGlobal(false);
-						ModInfo.SetDescription(PString(ST(2)));
-						ModInfo.SetName(sModule);
-						ModInfo.SetPath(PString(ST(1)));
-						ModInfo.SetWikiPage(PString(ST(3)));
+					if (1 == ret) {
 						bSuccess = true;
 					} else {
 						bSuccess = false;
@@ -174,14 +169,10 @@ public:
 			sRetMsg = "Something weird happened";
 		}
 		PEND;
-		DEBUG(__PRETTY_FUNCTION__ << " " << sRetMsg);
 		return result;
 	}
 
-	virtual void OnGetAvailableMods(set<CModInfo>& ssMods, bool bGlobal) {
-		if (bGlobal) {
-			return;
-		}
+	virtual void OnGetAvailableMods(set<CModInfo>& ssMods, CModInfo::EModuleType eType) {
 
 		unsigned int a = 0;
 		CDir Dir;
@@ -201,13 +192,9 @@ public:
 				PSTART;
 				PUSH_STR(sPath);
 				PUSH_STR(sName);
+				PUSH_PTR(CModInfo*, &ModInfo);
 				PCALL("ZNC::Core::ModInfoByPath");
 				if (!SvTRUE(ERRSV) && ret == 2) {
-					ModInfo.SetGlobal(false);
-					ModInfo.SetDescription(PString(ST(0)));
-					ModInfo.SetName(sName);
-					ModInfo.SetPath(sPath);
-					ModInfo.SetWikiPage(PString(ST(1)));
 					ssMods.insert(ModInfo);
 				}
 				PEND;
@@ -242,8 +229,7 @@ void CPerlTimer::RunJob() {
 	CPerlModule* pMod = AsPerlModule(GetModule());
 	if (pMod) {
 		PSTART;
-		PUSH_STR(pMod->GetPerlID());
-		PUSH_STR(GetPerlID());
+		XPUSHs(GetPerlObj());
 		PCALL("ZNC::Core::CallTimer");
 		PEND;
 	}
@@ -253,14 +239,13 @@ CPerlTimer::~CPerlTimer() {
 	CPerlModule* pMod = AsPerlModule(GetModule());
 	if (pMod) {
 		PSTART;
-		PUSH_STR(pMod->GetPerlID());
-		PUSH_STR(GetPerlID());
+		XPUSHs(sv_2mortal(m_perlObj));
 		PCALL("ZNC::Core::RemoveTimer");
 		PEND;
 	}
 }
 
-#define SOCKSTART PSTART; PUSH_STR(pMod->GetPerlID()); PUSH_STR(GetPerlID())
+#define SOCKSTART PSTART; XPUSHs(GetPerlObj())
 #define SOCKCBCHECK(OnSuccess) PCALL("ZNC::Core::CallSocket"); if (SvTRUE(ERRSV)) { Close(); DEBUG("Perl socket hook died with: " + PString(ERRSV)); } else { OnSuccess; } PEND
 #define CBSOCK(Func) void CPerlSocket::Func() {\
 	CPerlModule* pMod = AsPerlModule(GetModule());\
@@ -312,7 +297,8 @@ Csock* CPerlSocket::GetSockObj(const CString& sHost, unsigned short uPort) {
 CPerlSocket::~CPerlSocket() {
 	CPerlModule* pMod = AsPerlModule(GetModule());
 	if (pMod) {
-		SOCKSTART;
+		PSTART;
+		XPUSHs(sv_2mortal(m_perlObj));
 		PCALL("ZNC::Core::RemoveSocket");
 		PEND;
 	}

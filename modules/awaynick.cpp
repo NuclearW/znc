@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -7,8 +7,9 @@
  */
 
 // @todo handle raw 433 (nick in use)
-#include "IRCSock.h"
-#include "User.h"
+#include <znc/IRCSock.h>
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
 
 class CAwayNickMod;
 
@@ -31,10 +32,10 @@ public:
 
 private:
 	virtual void RunJob() {
-		CUser* pUser = m_Module.GetUser();
+		CIRCNetwork* pNetwork = m_Module.GetNetwork();
 
-		if (pUser->IsUserAttached() && pUser->IsIRCConnected()) {
-			CString sConfNick = pUser->GetNick();
+		if (pNetwork->IsUserAttached() && pNetwork->IsIRCConnected()) {
+			CString sConfNick = pNetwork->GetNick();
 			m_Module.PutIRC("NICK " + sConfNick);
 		}
 	}
@@ -76,10 +77,10 @@ public:
 	}
 
 	void StartBackNickTimer() {
-		CIRCSock* pIRCSock = m_pUser->GetIRCSock();
+		CIRCSock* pIRCSock = m_pNetwork->GetIRCSock();
 
 		if (pIRCSock) {
-			CString sConfNick = m_pUser->GetNick();
+			CString sConfNick = m_pNetwork->GetNick();
 
 			if (pIRCSock->GetNick().Equals(m_sAwayNick.Left(pIRCSock->GetNick().length()))) {
 				RemTimer("BackNickTimer");
@@ -90,7 +91,7 @@ public:
 
 	virtual EModRet OnIRCRegistration(CString& sPass, CString& sNick,
 			CString& sIdent, CString& sRealName) {
-		if (m_pUser && !m_pUser->IsUserAttached()) {
+		if (m_pNetwork && !m_pNetwork->IsUserAttached()) {
 			m_sAwayNick = m_sFormat;
 
 			// ExpandString doesn't know our nick yet, so do it by hand.
@@ -98,7 +99,7 @@ public:
 
 			// We don't limit this to NICKLEN, because we dont know
 			// NICKLEN yet.
-			sNick = m_sAwayNick = m_pUser->ExpandString(m_sAwayNick);
+			sNick = m_sAwayNick = m_pNetwork->ExpandString(m_sAwayNick);
 		}
 		return CONTINUE;
 	}
@@ -113,7 +114,7 @@ public:
 	}
 
 	virtual void OnClientDisconnect() {
-		if (!m_pUser->IsUserAttached()) {
+		if (!m_pNetwork->IsUserAttached()) {
 			StartAwayNickTimer();
 		}
 	}
@@ -131,7 +132,7 @@ public:
 				SetNV("nick", m_sFormat);
 			}
 
-			if (m_pUser) {
+			if (m_pNetwork) {
 				CString sExpanded = GetAwayNick();
 				CString sMsg = "AwayNick is set to [" + m_sFormat + "]";
 
@@ -142,7 +143,7 @@ public:
 				PutModule(sMsg);
 			}
 		} else if (sCommand.Equals("SHOW")) {
-			if (m_pUser) {
+			if (m_pNetwork) {
 				CString sExpanded = GetAwayNick();
 				CString sMsg = "AwayNick is set to [" + m_sFormat + "]";
 
@@ -159,13 +160,13 @@ public:
 
 	CString GetAwayNick() {
 		unsigned int uLen = 9;
-		CIRCSock* pIRCSock = m_pUser->GetIRCSock();
+		CIRCSock* pIRCSock = m_pNetwork->GetIRCSock();
 
 		if (pIRCSock) {
 			uLen = pIRCSock->GetMaxNickLen();
 		}
 
-		m_sAwayNick = m_pUser->ExpandString(m_sFormat).Left(uLen);
+		m_sAwayNick = m_pNetwork->ExpandString(m_sFormat).Left(uLen);
 		return m_sAwayNick;
 	}
 
@@ -179,9 +180,9 @@ CAwayNickTimer::CAwayNickTimer(CAwayNickMod& Module)
 	  m_Module(Module) {}
 
 void CAwayNickTimer::RunJob() {
-	CUser* pUser = m_Module.GetUser();
+	CIRCNetwork* pNetwork = m_Module.GetNetwork();
 
-	if (!pUser->IsUserAttached() && pUser->IsIRCConnected()) {
+	if (!pNetwork->IsUserAttached() && pNetwork->IsIRCConnected()) {
 		m_Module.PutIRC("NICK " + m_Module.GetAwayNick());
 	}
 }
@@ -190,4 +191,4 @@ template<> void TModInfo<CAwayNickMod>(CModInfo& Info) {
 	Info.SetWikiPage("awaynick");
 }
 
-MODULEDEFS(CAwayNickMod, "Change your nick while you are away")
+NETWORKMODULEDEFS(CAwayNickMod, "Change your nick while you are away")

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -11,9 +11,10 @@
 
 #define REQUIRESSL
 
-#include "FileUtils.h"
-#include "User.h"
-#include "znc.h"
+#include <znc/FileUtils.h>
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
+#include <znc/znc.h>
 #include <sstream>
 
 using std::pair;
@@ -384,13 +385,13 @@ public:
 	void SendToUser(const CString & sFrom, const CString & sText)
 	{
 		//:*schat!znc@znc.in PRIVMSG Jim :
-		CString sSend = ":" + sFrom + " PRIVMSG " + m_pUser->GetCurNick() + " :" + sText;
+		CString sSend = ":" + sFrom + " PRIVMSG " + m_pNetwork->GetCurNick() + " :" + sText;
 		PutUser(sSend);
 	}
 
 	bool IsAttached()
 	{
-		return(m_pUser->IsUserAttached());
+		return(m_pNetwork->IsUserAttached());
 	}
 
 private:
@@ -468,5 +469,5 @@ template<> void TModInfo<CSChat>(CModInfo& Info) {
 	Info.SetWikiPage("schat");
 }
 
-MODULEDEFS(CSChat, "Secure cross platform (:P) chat system")
+NETWORKMODULEDEFS(CSChat, "Secure cross platform (:P) chat system")
 

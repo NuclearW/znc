@@ -1,20 +1,21 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "User.h"
-#include "IRCSock.h"
-#include "znc.h"
+#include <znc/User.h>
+#include <znc/IRCNetwork.h>
+#include <znc/IRCSock.h>
+#include <znc/znc.h>
 
 #define MESSAGE "Your account has been disabled. Contact your administrator."
 
-class CBlockUser : public CGlobalModule {
+class CBlockUser : public CModule {
 public:
-	GLOBALMODCONSTRUCTOR(CBlockUser) {}
+	MODCONSTRUCTOR(CBlockUser) {}
 
 	virtual ~CBlockUser() {}
 
@@ -147,21 +148,18 @@ private:
 			return false;
 
 		// Disconnect all clients
-		vector<CClient*>& vpClients = pUser->GetClients();
+		vector<CClient*> vpClients = pUser->GetAllClients();
 		vector<CClient*>::iterator it;
 		for (it = vpClients.begin(); it != vpClients.end(); ++it) {
 			(*it)->PutStatusNotice(MESSAGE);
 			(*it)->Close(Csock::CLT_AFTERWRITE);
 		}
 
-		// Disconnect from IRC...
-		CIRCSock *pIRCSock = pUser->GetIRCSock();
-		if (pIRCSock) {
-			pIRCSock->Quit();
+		// Disconnect all networks from irc
+		vector<CIRCNetwork*> vNetworks = pUser->GetNetworks();
+		for (vector<CIRCNetwork*>::iterator it2 = vNetworks.begin(); it2 != vNetworks.end(); ++it2) {
+			(*it2)->SetIRCConnectEnabled(false);
 		}
-
-		// ...and don't reconnect
-		pUser->SetIRCConnectEnabled(false);
 
 		SetNV(pUser->GetUserName(), "");
 		return true;

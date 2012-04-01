@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2011  See the AUTHORS file for details.
+ * Copyright (C) 2004-2012  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -8,24 +8,27 @@
 
 %module znc_core %{
 #include <utility>
-#include "../Utils.h"
-#include "../Socket.h"
-#include "../Modules.h"
-#include "../Nick.h"
-#include "../Chan.h"
-#include "../User.h"
-#include "../Client.h"
-#include "../IRCSock.h"
-#include "../Listener.h"
-#include "../HTTPSock.h"
-#include "../Template.h"
-#include "../WebModules.h"
-#include "../znc.h"
-#include "../Server.h"
-#include "../ZNCString.h"
-#include "../FileUtils.h"
-#include "../ZNCDebug.h"
-#include "../ExecSock.h"
+#include "../include/znc/Utils.h"
+#include "../include/znc/Config.h"
+#include "../include/znc/Socket.h"
+#include "../include/znc/Modules.h"
+#include "../include/znc/Nick.h"
+#include "../include/znc/Chan.h"
+#include "../include/znc/User.h"
+#include "../include/znc/IRCNetwork.h"
+#include "../include/znc/Client.h"
+#include "../include/znc/IRCSock.h"
+#include "../include/znc/Listener.h"
+#include "../include/znc/HTTPSock.h"
+#include "../include/znc/Template.h"
+#include "../include/znc/WebModules.h"
+#include "../include/znc/znc.h"
+#include "../include/znc/Server.h"
+#include "../include/znc/ZNCString.h"
+#include "../include/znc/FileUtils.h"
+#include "../include/znc/ZNCDebug.h"
+#include "../include/znc/ExecSock.h"
+#include "../include/znc/Buffer.h"
 #include "modpython/module.h"
 
 #include "modpython/retstring.h"
@@ -34,8 +37,10 @@
 using std::allocator;
 %}
 
+%apply long { off_t };
+
 %begin %{
-#include "zncconfig.h"
+#include "znc/zncconfig.h"
 %}
 
 %include <pyabc.i>
@@ -63,6 +68,10 @@ namespace std {
 	}
 %}
 
+%template(VIRCNetworks) std::vector<CIRCNetwork*>;
+%template(VChannels) std::vector<CChan*>;
+%template(MNicks) std::map<CString, CNick>;
+
 %typemap(in) CString& {
 	String* p;
 	int res = SWIG_IsOK(SWIG_ConvertPtr($input, (void**)&p, SWIG_TypeQuery("String*"), 0));
@@ -73,29 +82,41 @@ namespace std {
 	}
 }
 
+%typemap(out) CString&, CString* {
+	if ($1) {
+		$result = CPyRetString::wrap(*$1);
+	} else {
+		$result = Py_None;
+		Py_INCREF(Py_None);
+	}
+}
+
 #define u_short unsigned short
 #define u_int unsigned int
-#include "../ZNCString.h"
-%include "../defines.h"
-%include "../Utils.h"
-%include "../Csocket.h"
+#include "../include/znc/ZNCString.h"
+%include "../include/znc/defines.h"
+%include "../include/znc/Utils.h"
+%include "../include/znc/Config.h"
+%include "../include/znc/Csocket.h"
 %template(ZNCSocketManager) TSocketManager<CZNCSock>;
-%include "../Socket.h"
-%include "../FileUtils.h"
-%include "../Modules.h"
-%include "../Nick.h"
-%include "../Chan.h"
-%include "../User.h"
-%include "../Client.h"
-%include "../IRCSock.h"
-%include "../Listener.h"
-%include "../HTTPSock.h"
-%include "../Template.h"
-%include "../WebModules.h"
-%include "../znc.h"
-%include "../Server.h"
-%include "../ZNCDebug.h"
-%include "../ExecSock.h"
+%include "../include/znc/Socket.h"
+%include "../include/znc/FileUtils.h"
+%include "../include/znc/Modules.h"
+%include "../include/znc/Nick.h"
+%include "../include/znc/Chan.h"
+%include "../include/znc/User.h"
+%include "../include/znc/IRCNetwork.h"
+%include "../include/znc/Client.h"
+%include "../include/znc/IRCSock.h"
+%include "../include/znc/Listener.h"
+%include "../include/znc/HTTPSock.h"
+%include "../include/znc/Template.h"
+%include "../include/znc/WebModules.h"
+%include "../include/znc/znc.h"
+%include "../include/znc/Server.h"
+%include "../include/znc/ZNCDebug.h"
+%include "../include/znc/ExecSock.h"
+%include "../include/znc/Buffer.h"
 
 %include "modpython/module.h"
 
@@ -152,7 +173,22 @@ public:
 	CString __repr__() {
 		return "<CUser " + $self->GetUserName() + ">";
 	}
+	std::vector<CIRCNetwork*> GetNetworks_() {
+		return $self->GetNetworks();
+	}
 };
+
+%extend CIRCNetwork {
+	CString __str__() {
+		return $self->GetName();
+	}
+	CString __repr__() {
+		return "<CIRCNetwork " + $self->GetName() + ">";
+	}
+	std::vector<CChan*> GetChans_() {
+		return $self->GetChans();
+	}
+}
 
 %extend CChan {
 	CString __str__() {
@@ -160,6 +196,9 @@ public:
 	}
 	CString __repr__() {
 		return "<CChan " + $self->GetName() + ">";
+	}
+	std::map<CString, CNick> GetNicks_() {
+		return $self->GetNicks();
 	}
 };
 
