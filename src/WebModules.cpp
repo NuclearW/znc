@@ -13,6 +13,9 @@
 #include <znc/znc.h>
 #include <sstream>
 
+using std::pair;
+using std::vector;
+
 /// @todo Do we want to make this a configure option?
 #define _SKINDIR_ _DATADIR_ "/webskins"
 
@@ -305,6 +308,7 @@ void CWebSock::SetVars() {
 	m_Template["SessionUser"] = GetUser();
 	m_Template["SessionIP"] = GetRemoteIP();
 	m_Template["Tag"] = CZNC::GetTag(GetSession()->GetUser() != NULL, true);
+	m_Template["Version"] = CZNC::GetVersion();
 	m_Template["SkinName"] = GetSkinName();
 	m_Template["_CSRF_Check"] = GetCSRFCheck();
 
@@ -686,12 +690,13 @@ CWebSock::EPageReqResult CWebSock::OnPageRequestInternal(const CString& sURI, CS
 				break;
 		}
 
+		if (!pModule)
+			return PAGE_NOTFOUND;
+
 		m_Template["ModPath"] = pModule->GetWebPath();
 		m_Template["ModFilesPath"] = pModule->GetWebFilesPath();
 
-		if (!pModule) {
-			return PAGE_NOTFOUND;
-		} else if (pModule->WebRequiresLogin() && !ForceLogin()) {
+		if (pModule->WebRequiresLogin() && !ForceLogin()) {
 			return PAGE_PRINT;
 		} else if (pModule->WebRequiresAdmin() && !GetSession()->IsAdmin()) {
 			PrintErrorPage(403, "Forbidden", "You need to be an admin to access this module");

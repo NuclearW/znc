@@ -11,6 +11,10 @@
 #include <sys/wait.h>
 #include <signal.h>
 
+using std::cout;
+using std::endl;
+using std::set;
+
 #ifdef HAVE_GETOPT_LONG
 #include <getopt.h>
 #else
@@ -207,8 +211,14 @@ int main(int argc, char** argv) {
 
 	{
 		set<CModInfo> ssGlobalMods;
+		set<CModInfo> ssUserMods;
+		set<CModInfo> ssNetworkMods;
+		CUtils::PrintAction("Checking for list of available modules");
 		pZNC->GetModules().GetAvailableMods(ssGlobalMods, CModInfo::GlobalModule);
-		if (ssGlobalMods.empty()) {
+		pZNC->GetModules().GetAvailableMods(ssUserMods, CModInfo::UserModule);
+		pZNC->GetModules().GetAvailableMods(ssNetworkMods, CModInfo::NetworkModule);
+		if (ssGlobalMods.empty() && ssUserMods.empty() && ssNetworkMods.empty()) {
+			CUtils::PrintStatus(false, "");
 			CUtils::PrintError("No modules found. Perhaps you didn't install ZNC properly?");
 			CUtils::PrintError("Read http://wiki.znc.in/Installation for instructions.");
 			if (!CUtils::GetBoolInput("Do you really want to run ZNC without any modules?", false)) {
@@ -216,6 +226,7 @@ int main(int argc, char** argv) {
 				return 1;
 			}
 		}
+		CUtils::PrintStatus(true, "");
 	}
 
 	if (isRoot()) {

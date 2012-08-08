@@ -18,7 +18,10 @@
 
 #include "modpython/swigpyrun.h"
 #include "modpython/module.h"
-#include "modpython/retstring.h"
+#include "modpython/ret.h"
+
+using std::vector;
+using std::set;
 
 class CModPython: public CModule {
 
@@ -143,7 +146,7 @@ public:
 				(eType == CModInfo::GlobalModule ? Py_None : SWIG_NewInstanceObj(GetUser(), SWIG_TypeQuery("CUser*"), 0)),
 				(eType == CModInfo::NetworkModule ? SWIG_NewInstanceObj(GetNetwork(), SWIG_TypeQuery("CIRCNetwork*"), 0) : Py_None),
 				CPyRetString::wrap(sRetMsg),
-				SWIG_NewInstanceObj(reinterpret_cast<CModule*>(this), SWIG_TypeQuery("CModule*"), 0));
+				SWIG_NewInstanceObj(reinterpret_cast<CModule*>(this), SWIG_TypeQuery("CModPython*"), 0));
 		if (!pyRes) {
 			sRetMsg = GetPyExceptionStr();
 			DEBUG("modpython: " << sRetMsg);
@@ -196,6 +199,11 @@ public:
 				bSuccess = false;
 				Py_CLEAR(pyFunc);
 				return HALT;
+			}
+			if (!PyObject_IsTrue(pyRes)) {
+				// python module, but not handled by modpython itself.
+				// some module-provider written on python loaded it?
+				return CONTINUE;
 			}
 			Py_CLEAR(pyFunc);
 			Py_CLEAR(pyRes);

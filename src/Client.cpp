@@ -15,6 +15,8 @@
 #include <znc/znc.h>
 #include <znc/WebModules.h>
 
+using std::vector;
+
 #define CALLMOD(MOD, CLIENT, USER, NETWORK, FUNC) {  \
 	CModule *pModule = NULL;  \
 	if (NETWORK && (pModule = (NETWORK)->GetModules().FindModule(MOD))) {  \
@@ -67,6 +69,13 @@ CClient::~CClient() {
 		m_pUser->AddBytesRead(GetBytesRead());
 		m_pUser->AddBytesWritten(GetBytesWritten());
 	}
+}
+
+void CClient::SendRequiredPasswordNotice() {
+	PutClient(":irc.znc.in 464 " + GetNick() + " :Password required");
+	PutClient(":irc.znc.in NOTICE AUTH :*** "
+			  "You need to send your password. "
+			  "Try /quote PASS <username>:<password>");
 }
 
 void CClient::ReadLine(const CString& sData) {
@@ -132,10 +141,8 @@ void CClient::ReadLine(const CString& sData) {
 			m_bGotUser = true;
 			if (m_bGotPass) {
 				AuthUser();
-			} else {
-				PutClient(":irc.znc.in NOTICE AUTH :*** "
-					"You need to send your password. "
-					"Try /quote PASS <username>:<password>");
+			} else if (!m_bInCap) {
+				SendRequiredPasswordNotice();
 			}
 
 			return;  // Don't forward this msg.  ZNC has already registered us.
@@ -238,7 +245,7 @@ void CClient::ReadLine(const CString& sData) {
 		if (m_pNetwork) {
 			CChan* pChan = m_pNetwork->FindChan(sTarget);
 
-			if ((pChan) && (pChan->KeepBuffer())) {
+			if ((pChan) && (!pChan->AutoClearChanBuffer())) {
 				pChan->AddBuffer(":" + _NAMEDFMT(GetNickMask()) + " NOTICE " + _NAMEDFMT(sTarget) + " :{text}", sMsg);
 			}
 
@@ -284,7 +291,7 @@ void CClient::ReadLine(const CString& sData) {
 					NETWORKMODULECALL(OnUserAction(sTarget, sMessage), m_pUser, m_pNetwork, this, return);
 					sCTCP = "ACTION " + sMessage;
 
-					if (pChan && (pChan->KeepBuffer() || !m_pNetwork->IsUserOnline())) {
+					if (pChan && (!pChan->AutoClearChanBuffer() || !m_pNetwork->IsUserOnline())) {
 						pChan->AddBuffer(":" + _NAMEDFMT(GetNickMask()) + " PRIVMSG " + _NAMEDFMT(sTarget) + " :\001ACTION {text}\001", sMessage);
 					}
 
@@ -332,7 +339,7 @@ void CClient::ReadLine(const CString& sData) {
 		if (m_pNetwork) {
 			CChan* pChan = m_pNetwork->FindChan(sTarget);
 
-			if ((pChan) && (pChan->KeepBuffer() || !m_pNetwork->IsUserOnline())) {
+			if ((pChan) && (!pChan->AutoClearChanBuffer() || !m_pNetwork->IsUserOnline())) {
 				pChan->AddBuffer(":" + _NAMEDFMT(GetNickMask()) + " PRIVMSG " + _NAMEDFMT(sTarget) + " :{text}", sMsg);
 			}
 
@@ -375,7 +382,6 @@ void CClient::ReadLine(const CString& sData) {
 		}
 
 		pChan->DetachUser();
-		PutStatusNotice("Detached from [" + sChan + "]");
 		return;
 	} else if (sCommand.Equals("JOIN")) {
 		CString sChans = sLine.Token(1).TrimPrefix_n();
@@ -410,20 +416,32 @@ void CClient::ReadLine(const CString& sData) {
 			sLine += " " + sKey;
 		}
 	} else if (sCommand.Equals("PART")) {
-		CString sChan = sLine.Token(1).TrimPrefix_n();
+		CString sChans = sLine.Token(1).TrimPrefix_n();
 		CString sMessage = sLine.Token(2, true).TrimPrefix_n();
 
-		NETWORKMODULECALL(OnUserPart(sChan, sMessage), m_pUser, m_pNetwork, this, return);
+		VCString vChans;
+		sChans.Split(",", vChans, false);
+		sChans.clear();
 
-		CChan* pChan = m_pNetwork->FindChan(sChan);
+		for (VCString::const_iterator it = vChans.begin(); it != vChans.end(); ++it) {
+			CString sChan = *it;
+			NETWORKMODULECALL(OnUserPart(sChan, sMessage), m_pUser, m_pNetwork, this, continue);
 
-		if (pChan && !pChan->IsOn()) {
-			PutStatusNotice("Removing channel [" + sChan + "]");
-			m_pNetwork->DelChan(sChan);
+			CChan* pChan = m_pNetwork->FindChan(sChan);
+
+			if (pChan && !pChan->IsOn()) {
+				PutStatusNotice("Removing channel [" + sChan + "]");
+				m_pNetwork->DelChan(sChan);
+			} else {
+				sChans += (sChans.empty()) ? sChan : CString("," + sChan); 
+			}
+		}
+
+		if (sChans.empty()) {
 			return;
 		}
 
-		sLine = "PART " + sChan;
+		sLine = "PART " + sChans;
 
 		if (!sMessage.empty()) {
 			sLine += " :" + sMessage;
@@ -767,12 +785,12 @@ CString CClient::GetNickMask() const {
 		return GetIRCSock()->GetNickMask();
 	}
 
-	CString sHost = m_pUser->GetBindHost();
+	CString sHost = m_pNetwork ? m_pNetwork->GetBindHost() : m_pUser->GetBindHost();
 	if (sHost.empty()) {
 		sHost = "irc.znc.in";
 	}
 
-	return GetNick() + "!" + m_pUser->GetIdent() + "@" + sHost;
+	return GetNick() + "!" + (m_pNetwork ? m_pNetwork->GetBindHost() : m_pUser->GetIdent()) + "@" + sHost;
 }
 
 void CClient::RespondCap(const CString& sResponse)
@@ -782,6 +800,7 @@ void CClient::RespondCap(const CString& sResponse)
 
 void CClient::HandleCap(const CString& sLine)
 {
+	//TODO support ~ and = modifiers
 	CString sSubCmd = sLine.Token(1);
 
 	if (sSubCmd.Equals("LS")) {
@@ -791,11 +810,17 @@ void CClient::HandleCap(const CString& sLine)
 		for (SCString::iterator i = ssOfferCaps.begin(); i != ssOfferCaps.end(); ++i) {
 			sRes += *i + " ";
 		}
-		RespondCap("LS :" + sRes + "userhost-in-names multi-prefix znc.in/server-time");
+		RespondCap("LS :" + sRes + "userhost-in-names multi-prefix server-time");
 		m_bInCap = true;
 	} else if (sSubCmd.Equals("END")) {
 		m_bInCap = false;
-		AuthUser();
+		if (!IsAttached()) {
+			if (!m_pUser && m_bGotUser && !m_bGotPass) {
+				SendRequiredPasswordNotice();
+			} else {
+				AuthUser();
+			}
+		}
 	} else if (sSubCmd.Equals("REQ")) {
 		VCString vsTokens;
 		VCString::iterator it;
@@ -807,7 +832,7 @@ void CClient::HandleCap(const CString& sLine)
 			if (sCap.TrimPrefix("-"))
 				bVal = false;
 
-			bool bAccepted = ("multi-prefix" == sCap) || ("userhost-in-names" == sCap) || ("znc.in/server-time" == sCap);
+			bool bAccepted = ("multi-prefix" == sCap) || ("userhost-in-names" == sCap) || ("server-time" == sCap);
 			GLOBALMODULECALL(IsClientCapSupported(this, sCap, bVal), bAccepted = true);
 
 			if (!bAccepted) {
@@ -827,7 +852,7 @@ void CClient::HandleCap(const CString& sLine)
 				m_bNamesx = bVal;
 			} else if ("userhost-in-names" == *it) {
 				m_bUHNames = bVal;
-			} else if ("znc.in/server-time" == *it) {
+			} else if ("server-time" == *it) {
 				m_bServerTime = bVal;
 			}
 			GLOBALMODULECALL(OnClientCapRequest(this, *it, bVal), NOTHING);
@@ -866,7 +891,7 @@ void CClient::HandleCap(const CString& sLine)
 		}
 		if (m_bServerTime) {
 			m_bServerTime = false;
-			ssRemoved.insert("znc.in/server-time");
+			ssRemoved.insert("server-time");
 		}
 		CString sList = "";
 		for (SCString::iterator i = ssRemoved.begin(); i != ssRemoved.end(); ++i) {
@@ -874,5 +899,7 @@ void CClient::HandleCap(const CString& sLine)
 			sList += "-" + *i + " ";
 		}
 		RespondCap("ACK :" + sList.TrimSuffix_n(" "));
+	} else {
+		PutClient(":irc.znc.in 410 " + GetNick() + " :Invalid CAP subcommand");
 	}
 }

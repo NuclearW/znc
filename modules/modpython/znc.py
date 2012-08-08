@@ -498,19 +498,21 @@ def load_module(modname, args, module_type, user, network, retmsg, modpython):
             retmsg.s = "Module [{}] is UserModule and needs user.".format(modname)
             unload_module(module)
             return 1
-        user.GetModules().push_back(module._cmod)
+        cont = user
     elif module_type == CModInfo.NetworkModule:
         if not network:
             retmsg.s = "Module [{}] is Network module and needs a network.".format(modname)
             unload_module(module)
             return 1
-        network.GetModules().push_back(module._cmod)
+        cont = network
     elif module_type == CModInfo.GlobalModule:
-        CZNC.Get().GetModules().push_back(module._cmod)
+        cont = CZNC.Get()
     else:
         retmsg.s = "Module [{}] doesn't support that module type.".format(modname)
         unload_module(module)
         return 1
+
+    cont.GetModules().append(module._cmod)
 
     try:
         loaded = True
@@ -549,18 +551,22 @@ def load_module(modname, args, module_type, user, network, retmsg, modpython):
 
 
 def unload_module(module):
+    if (module not in _py_modules):
+        return False
     module.OnShutdown()
     _py_modules.discard(module)
     cmod = module._cmod
     if module.GetType() == CModInfo.UserModule:
-        cmod.GetUser().GetModules().removeModule(cmod)
+        cont = cmod.GetUser()
     elif module.GetType() == CModInfo.NetworkModule:
-        cmod.GetNetwork().GetModules().removeModule(cmod)
+        cont = cmod.GetNetwork()
     elif module.GetType() == CModInfo.GlobalModule:
-        CZNC.Get().GetModules().removeModule(cmod)
+        cont = CZNC.Get()
+    cont.GetModules().removeModule(cmod)
     del module._cmod
     cmod.DeletePyModule()
     del cmod
+    return True
 
 
 def unload_all():

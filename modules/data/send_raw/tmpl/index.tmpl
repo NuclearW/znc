@@ -1,3 +1,4 @@
+<? ADDROW JSLoop HREF=/modfiles/user/send_raw/select.js ?>
 <? INC Header.tmpl ?>
 
 <form method="post" action="<? VAR ModPath ?>">
@@ -8,28 +9,35 @@
 
 		<div class="sectionbg">
 			<div class="sectionbody">
-				<div class="subsection third">
+				<div class="subsection third" id="userblock" style="display:none">
 					<div class="inputlabel">User:</div>
-					<div><select name="user">
-						<? LOOP UserLoop?>
-							<option value="<? VAR Username ESC=HTML ?>"><? VAR Username ESC=HTML ?></option>
+					<input id="user" type="text" disabled="disabled" title="To change user, click to Network selector"/>
+				</div>
+
+				<div class="subsection third">
+					<div class="inputlabel" id="networklabel">User/Network:</div>
+					<select name="network" id="selectnetwork" onchange="javascript:updateUser()">
+						<? LOOP UserLoop ?>
+							<optgroup label="<? VAR Username ?>">
+								<? LOOP NetworkLoop ?>
+									<option value="<? VAR Username ?>/<? VAR Network ?>"><? VAR Network ?></option>
+								<? ENDLOOP ?>
+							</optgroup>
 						<? ENDLOOP ?>
-					</select></div>
+					</select>
 				</div>
 
 				<div class="subsection third">
 					<div class="inputlabel">Send to:</div>
-					<div>
-						<select name="send_to">
-							<option value="client"<? IF to_client ?> selected="yes"<? ENDIF ?>>Client</option>
-							<option value="server"<? IF to_server ?> selected="yes"<? ENDIF ?>>Server</option>
-						</select>
-					</div>
+					<select name="send_to">
+						<option value="client"<? IF to_client ?> selected="yes"<? ENDIF ?>>Client</option>
+						<option value="server"<? IF to_server ?> selected="yes"<? ENDIF ?>>Server</option>
+					</select>
 				</div>
 
 				<div class="subsection full">
 					<div class="inputlabel">Line:</div>
-					<div><input type="text" name="line" value="<? VAR line ?>" /></div>
+					<input type="text" name="line" value="<? VAR line ?>" />
 				</div>
 
 				<div class="subsection submitline">
@@ -39,5 +47,7 @@
 		</div>
 	</div>
 </form>
+
+<script type="text/javascript">init();</script>
 
 <? INC Footer.tmpl ?>

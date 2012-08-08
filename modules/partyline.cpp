@@ -10,6 +10,10 @@
 #include <znc/znc.h>
 #include <znc/IRCNetwork.h>
 
+using std::set;
+using std::vector;
+using std::map;
+
 // If you change these and it breaks, you get to keep the pieces
 #define CHAN_PREFIX_1   "~"
 #define CHAN_PREFIX_1C  '~'
@@ -607,6 +611,8 @@ private:
 
 template<> void TModInfo<CPartylineMod>(CModInfo& Info) {
 	Info.SetWikiPage("partyline");
+	Info.SetHasArgs(true);
+	Info.SetArgsHelpText("You may enter a list of channels the user joins, when entering the internal partyline.");
 }
 
 GLOBALMODULEDEFS(CPartylineMod, "Internal channels and queries for users connected to znc")

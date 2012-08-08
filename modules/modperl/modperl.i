@@ -79,6 +79,12 @@ namespace std {
 %template(VIRCNetworks) std::vector<CIRCNetwork*>;
 %template(VChannels) std::vector<CChan*>;
 /*%template(MNicks) std::map<CString, CNick>;*/
+/*%template(SModInfo) std::set<CModInfo>;
+%template(SCString) std::set<CString>;
+typedef std::set<CString> SCString;*/
+%template(PerlMCString) std::map<CString, CString>;
+class MCString : public std::map<CString, CString> {};
+/*%template(PerlModulesVector) std::vector<CModule*>;*/
 
 %typemap(out) std::map<CString, CNick> {
 	HV* myhv = newHV();
@@ -198,10 +204,10 @@ namespace std {
 
 /* Web */
 
-%template(StrPair) pair<CString, CString>;
-%template(VPair) vector<pair<CString, CString> >;
-typedef vector<pair<CString, CString> > VPair;
-%template(VWebSubPages) vector<TWebSubPage>;
+%template(StrPair) std::pair<CString, CString>;
+%template(VPair) std::vector<std::pair<CString, CString> >;
+typedef std::vector<std::pair<CString, CString> > VPair;
+%template(VWebSubPages) std::vector<TWebSubPage>;
 
 %inline %{
 	void _VPair_Add2Str(VPair* self, const CString& a, const CString& b) {
@@ -264,4 +270,4 @@ typedef vector<pair<CString, CString> > VPair;
 	*GetNicks = *_GetNicks_;
 %}
 
-/* vim: set filetype=cpp noexpandtab: */
+/* vim: set filetype=cpp: */

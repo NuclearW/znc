@@ -22,6 +22,9 @@
 
 using std::stringstream;
 using std::make_pair;
+using std::set;
+using std::vector;
+using std::map;
 
 /* Stuff to be able to write this:
    // i will be name of local variable, see below
@@ -216,6 +219,29 @@ public:
 			if (!sArg2.empty()) {
 				pNewUser->SetDCCBindHost(sArg2);
 			}
+
+			const VCString& vsHosts = CZNC::Get().GetBindHosts();
+			if (!spSession->IsAdmin() && !vsHosts.empty()) {
+				VCString::const_iterator it;
+				bool bFound = false;
+				bool bFoundDCC = false;
+
+				for (it = vsHosts.begin(); it != vsHosts.end(); ++it) {
+					if (sArg.Equals(*it)) {
+						bFound = true;
+					}
+					if (sArg2.Equals(*it)) {
+						bFoundDCC = true;
+					}
+				}
+
+				if (!bFound) {
+					pNewUser->SetBindHost(pUser ? pUser->GetBindHost() : "");
+				}
+				if (!bFoundDCC) {
+					pNewUser->SetDCCBindHost(pUser ? pUser->GetDCCBindHost() : "");
+				}
+			}
 		} else if (pUser){
 			pNewUser->SetBindHost(pUser->GetBindHost());
 			pNewUser->SetDCCBindHost(pUser->GetDCCBindHost());
@@ -226,7 +252,7 @@ public:
 			pNewUser->SetBufferCount(pUser->GetBufferCount(), true);
 		pNewUser->SetBufferCount(WebSock.GetParam("bufsize").ToUInt(), spSession->IsAdmin());
 		pNewUser->SetSkinName(WebSock.GetParam("skin"));
-		pNewUser->SetKeepBuffer(WebSock.GetParam("keepbuffer").ToBool());
+		pNewUser->SetAutoClearChanBuffer(WebSock.GetParam("autoclearchanbuffer").ToBool());
 		pNewUser->SetMultiClients(WebSock.GetParam("multiclients").ToBool());
 		pNewUser->SetTimestampAppend(WebSock.GetParam("appendtimestamp").ToBool());
 		pNewUser->SetTimestampPrepend(WebSock.GetParam("prependtimestamp").ToBool());
@@ -569,9 +595,10 @@ public:
 			// o1 used to be AutoCycle which was removed
 
 			CTemplate& o2 = Tmpl.AddRow("OptionLoop");
-			o2["Name"] = "keepbuffer";
-			o2["DisplayName"] = "Keep Buffer";
-			if ((pChan && pChan->KeepBuffer()) || (!pChan && pUser->KeepBuffer())) { o2["Checked"] = "true"; }
+			o2["Name"] = "autoclearchanbuffer";
+			o2["DisplayName"] = "Auto Clear Chan Buffer";
+			o2["Tooltip"] = "Automatically Clear Channel Buffer After Playback";
+			if ((pChan && pChan->AutoClearChanBuffer()) || (!pChan && pUser->AutoClearChanBuffer())) { o2["Checked"] = "true"; }
 
 			CTemplate& o3 = Tmpl.AddRow("OptionLoop");
 			o3["Name"] = "detached";
@@ -616,7 +643,7 @@ public:
 		pChan->SetBufferCount(WebSock.GetParam("buffercount").ToUInt(), spSession->IsAdmin());
 		pChan->SetDefaultModes(WebSock.GetParam("defmodes"));
 		pChan->SetInConfig(WebSock.GetParam("save").ToBool());
-		pChan->SetKeepBuffer(WebSock.GetParam("keepbuffer").ToBool());
+		pChan->SetAutoClearChanBuffer(WebSock.GetParam("autoclearchanbuffer").ToBool());
 		pChan->SetKey(WebSock.GetParam("key"));
 
 		bool bDetached = WebSock.GetParam("detached").ToBool();
@@ -667,6 +694,8 @@ public:
 				l["Name"] = Info.GetName();
 				l["Description"] = Info.GetDescription();
 				l["Wiki"] = Info.GetWikiPage();
+				l["HasArgs"] = CString(Info.GetHasArgs());
+				l["ArgsHelpText"] = Info.GetArgsHelpText();
 
 				if (pNetwork) {
 					CModule *pModule = pNetwork->GetModules().FindModule(Info.GetName());
@@ -678,6 +707,38 @@ public:
 
 				if (!spSession->IsAdmin() && pUser->DenyLoadMod()) {
 					l["Disabled"] = "true";
+				}
+			}
+
+			// To change BindHosts be admin or don't have DenySetBindHost
+			if (spSession->IsAdmin() || !spSession->GetUser()->DenySetBindHost()) {
+				Tmpl["BindHostEdit"] = "true";
+				const VCString& vsBindHosts = CZNC::Get().GetBindHosts();
+				if (vsBindHosts.empty()) {
+					if (pNetwork) {
+						Tmpl["BindHost"] = pNetwork->GetBindHost();
+					}
+				} else {
+					bool bFoundBindHost = false;
+					for (unsigned int b = 0; b < vsBindHosts.size(); b++) {
+						const CString& sBindHost = vsBindHosts[b];
+						CTemplate& l = Tmpl.AddRow("BindHostLoop");
+
+						l["BindHost"] = sBindHost;
+
+						if (pNetwork && pNetwork->GetBindHost() == sBindHost) {
+							l["Checked"] = "true";
+							bFoundBindHost = true;
+						}
+					}
+
+					// If our current bindhost is not in the global list...
+					if (pNetwork && !bFoundBindHost && !pNetwork->GetBindHost().empty()) {
+						CTemplate& l = Tmpl.AddRow("BindHostLoop");
+
+						l["BindHost"] = pNetwork->GetBindHost();
+						l["Checked"] = "true";
+					}
 				}
 			}
 
@@ -763,6 +824,29 @@ public:
 		pNetwork->SetRealName(WebSock.GetParam("realname"));
 
 		pNetwork->SetIRCConnectEnabled(WebSock.GetParam("doconnect").ToBool());
+
+		sArg = WebSock.GetParam("bindhost");
+		// To change BindHosts be admin or don't have DenySetBindHost
+		if (spSession->IsAdmin() || !spSession->GetUser()->DenySetBindHost()) {
+			CString sHost = WebSock.GetParam("bindhost");
+			const VCString& vsHosts = CZNC::Get().GetBindHosts();
+			if (!spSession->IsAdmin() && !vsHosts.empty()) {
+				VCString::const_iterator it;
+				bool bFound = false;
+
+				for (it = vsHosts.begin(); it != vsHosts.end(); ++it) {
+					if (sHost.Equals(*it)) {
+						bFound = true;
+						break;
+					}
+				}
+
+				if (!bFound) {
+					sHost = pNetwork->GetBindHost();
+				}
+			}
+			pNetwork->SetBindHost(sHost);
+		}
 
 		if (WebSock.GetParam("floodprotection").ToBool()) {
 			pNetwork->SetFloodRate(WebSock.GetParam("floodrate").ToDouble());
@@ -970,8 +1054,10 @@ public:
 				Tmpl["BindHostEdit"] = "true";
 				const VCString& vsBindHosts = CZNC::Get().GetBindHosts();
 				if (vsBindHosts.empty()) {
-					Tmpl["BindHost"] = pUser->GetBindHost();
-					Tmpl["DCCBindHost"] = pUser->GetDCCBindHost();
+					if (pUser) {
+						Tmpl["BindHost"] = pUser->GetBindHost();
+						Tmpl["DCCBindHost"] = pUser->GetDCCBindHost();
+					}
 				} else {
 					bool bFoundBindHost = false;
 					bool bFoundDCCBindHost = false;
@@ -1033,6 +1119,8 @@ public:
 				l["Name"] = Info.GetName();
 				l["Description"] = Info.GetDescription();
 				l["Wiki"] = Info.GetWikiPage();
+				l["HasArgs"] = CString(Info.GetHasArgs());
+				l["ArgsHelpText"] = Info.GetArgsHelpText();
 
 				CModule *pModule = NULL;
 				if (pUser)
@@ -1048,9 +1136,10 @@ public:
 			}
 
 			CTemplate& o1 = Tmpl.AddRow("OptionLoop");
-			o1["Name"] = "keepbuffer";
-			o1["DisplayName"] = "Keep Buffer";
-			if (!pUser || pUser->KeepBuffer()) { o1["Checked"] = "true"; }
+			o1["Name"] = "autoclearchanbuffer";
+			o1["DisplayName"] = "Auto Clear Chan Buffer";
+			o1["Tooltip"] = "Automatically Clear Channel Buffer After Playback (the default value for new channels)";
+			if (!pUser || pUser->AutoClearChanBuffer()) { o1["Checked"] = "true"; }
 
 			/* o2 used to be auto cycle which was removed */
 
@@ -1443,6 +1532,8 @@ public:
 				l["Name"] = Info.GetName();
 				l["Description"] = Info.GetDescription();
 				l["Wiki"] = Info.GetWikiPage();
+				l["HasArgs"] = CString(Info.GetHasArgs());
+				l["ArgsHelpText"] = Info.GetArgsHelpText();
 			}
 
 			return true;

@@ -31,7 +31,7 @@
 #include "../include/znc/Buffer.h"
 #include "modpython/module.h"
 
-#include "modpython/retstring.h"
+#include "modpython/ret.h"
 
 #define stat struct stat
 using std::allocator;
@@ -47,14 +47,7 @@ using std::allocator;
 %include <typemaps.i>
 %include <stl.i>
 %include <std_list.i>
-
-namespace std {
-	template<class K> class set {
-		public:
-		set();
-		set(const set<K>&);
-	};
-}
+%include <std_set.i>
 
 %include "modpython/cstring.i"
 %template(_stringlist) std::list<CString>;
@@ -71,6 +64,12 @@ namespace std {
 %template(VIRCNetworks) std::vector<CIRCNetwork*>;
 %template(VChannels) std::vector<CChan*>;
 %template(MNicks) std::map<CString, CNick>;
+%template(SModInfo) std::set<CModInfo>;
+%template(SCString) std::set<CString>;
+typedef std::set<CString> SCString;
+%template(PyMCString) std::map<CString, CString>;
+class MCString : public std::map<CString, CString> {};
+%template(PyModulesVector) std::vector<CModule*>;
 
 %typemap(in) CString& {
 	String* p;
@@ -91,11 +90,23 @@ namespace std {
 	}
 }
 
+/*TODO %typemap(in) bool& to be able to call from python functions which get bool& */
+
+%typemap(out) bool&, bool* {
+	if ($1) {
+		$result = CPyRetBool::wrap(*$1);
+	} else {
+		$result = Py_None;
+		Py_INCREF(Py_None);
+	}
+}
+
 #define u_short unsigned short
 #define u_int unsigned int
 #include "../include/znc/ZNCString.h"
 %include "../include/znc/defines.h"
 %include "../include/znc/Utils.h"
+%template(PAuthBase) CSmartPtr<CAuthBase>;
 %include "../include/znc/Config.h"
 %include "../include/znc/Csocket.h"
 %template(ZNCSocketManager) TSocketManager<CZNCSock>;
@@ -139,6 +150,18 @@ public:
 	}
 };
 
+class CPyRetBool {
+	CPyRetBool();
+	public:
+	bool b;
+};
+
+%extend CPyRetBool {
+	bool __bool__() {
+		return $self->b;
+	}
+}
+
 %extend CModule {
 	CString __str__() {
 		return $self->GetModName();
@@ -152,9 +175,6 @@ public:
 }
 
 %extend CModules {
-	void push_back(CModule* p) {
-		$self->push_back(p);
-	}
 	bool removeModule(CModule* p) {
 		for (CModules::iterator i = $self->begin(); $self->end() != i; ++i) {
 			if (*i == p) {
@@ -211,12 +231,24 @@ public:
 	}
 };
 
+/* To allow module-loaders to be written on python.
+ * They can call CreatePyModule() to create CModule* object, but one of arguments to CreatePyModule() is "CModule* pModPython"
+ * Pointer to modpython is already accessible to python modules as self.GetModPython(), but it's just a pointer to something, not to CModule*.
+ * So make it known that CModPython is really a CModule.
+ */
+class CModPython : public CModule {
+private:
+	CModPython();
+	CModPython(const CModPython&);
+	~CModPython();
+};
+
 /* Web */
 
-%template(StrPair) pair<CString, CString>;
-%template(VPair) vector<pair<CString, CString> >;
-typedef vector<pair<CString, CString> > VPair;
-%template(VWebSubPages) vector<TWebSubPage>;
+%template(StrPair) std::pair<CString, CString>;
+%template(VPair) std::vector<std::pair<CString, CString> >;
+typedef std::vector<std::pair<CString, CString> > VPair;
+%template(VWebSubPages) std::vector<TWebSubPage>;
 
 %inline %{
 	void VPair_Add2Str_(VPair* self, const CString& a, const CString& b) {
@@ -226,6 +258,7 @@ typedef vector<pair<CString, CString> > VPair;
 
 %extend CTemplate {
 	void set(const CString& key, const CString& value) {
+		DEBUG("WARNING: modpython's CTemplate.set is deprecated and will be removed. Use normal dict's operations like Tmpl['foo'] = 'bar'");
 		(*$self)[key] = value;
 	}
 }
@@ -236,4 +269,4 @@ typedef vector<pair<CString, CString> > VPair;
 	}
 %}
 
-/* vim: set filetype=cpp noexpandtab: */
+/* vim: set filetype=cpp: */

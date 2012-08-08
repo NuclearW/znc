@@ -13,6 +13,8 @@
 #include <znc/Nick.h>
 #include <znc/Chan.h>
 
+using std::set;
+
 #ifndef Q_DEBUG_COMMUNICATION
 	#define Q_DEBUG_COMMUNICATION 0
 #endif
@@ -486,6 +488,8 @@ private:
 
 template<> void TModInfo<CQModule>(CModInfo& Info) {
 	Info.SetWikiPage("Q");
+	Info.SetHasArgs(true);
+	Info.SetArgsHelpText("Please provide your username and password for Q.");
 }
 
 NETWORKMODULEDEFS(CQModule, "Auths you with QuakeNet's Q bot.")

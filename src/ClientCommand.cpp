@@ -16,6 +16,10 @@
 #include <znc/User.h>
 #include <znc/znc.h>
 
+using std::vector;
+using std::set;
+using std::map;
+
 void CClient::UserCommand(CString& sLine) {
 	if (!m_pUser) {
 		return;
@@ -392,7 +396,7 @@ void CClient::UserCommand(CString& sLine) {
 			Table.SetCell("Name", pChan->GetPermStr() + pChan->GetName());
 			Table.SetCell("Status", ((vChans[a]->IsOn()) ? ((vChans[a]->IsDetached()) ? "Detached" : "Joined") : ((vChans[a]->IsDisabled()) ? "Disabled" : "Trying")));
 			Table.SetCell("Conf", CString((pChan->InConfig()) ? "yes" : ""));
-			Table.SetCell("Buf", CString((pChan->KeepBuffer()) ? "*" : "") + CString(pChan->GetBufferCount()));
+			Table.SetCell("Buf", CString((pChan->AutoClearChanBuffer()) ? "*" : "") + CString(pChan->GetBufferCount()));
 			Table.SetCell("Modes", pChan->GetModeString());
 			Table.SetCell("Users", CString(pChan->GetNickCount()));
 
@@ -742,11 +746,12 @@ void CClient::UserCommand(CString& sLine) {
 		CString sMod = sLine.Token(2);
 		CString sArgs = sLine.Token(3, true);
 
-		if (sType.Equals("global")) {
+		// TODO use proper library for parsing arguments
+		if (sType.Equals("--type=global")) {
 			eType = CModInfo::GlobalModule;
-		} else if (sType.Equals("user")) {
+		} else if (sType.Equals("--type=user")) {
 			eType = CModInfo::UserModule;
-		} else if (sType.Equals("network")) {
+		} else if (sType.Equals("--type=network")) {
 			eType = CModInfo::NetworkModule;
 		} else {
 			sMod = sType;
@@ -762,7 +767,7 @@ void CClient::UserCommand(CString& sLine) {
 		}
 
 		if (sMod.empty()) {
-			PutStatus("Usage: LoadMod [type] <module> [args]");
+			PutStatus("Usage: LoadMod [--type=global|user|network] <module> [args]");
 			return;
 		}
 
@@ -814,11 +819,12 @@ void CClient::UserCommand(CString& sLine) {
 		CString sType = sLine.Token(1);
 		CString sMod = sLine.Token(2);
 
-		if (sType.Equals("global")) {
+		// TODO use proper library for parsing arguments
+		if (sType.Equals("--type=global")) {
 			eType = CModInfo::GlobalModule;
-		} else if (sType.Equals("user")) {
+		} else if (sType.Equals("--type=user")) {
 			eType = CModInfo::UserModule;
-		} else if (sType.Equals("network")) {
+		} else if (sType.Equals("--type=network")) {
 			eType = CModInfo::NetworkModule;
 		} else {
 			sMod = sType;
@@ -831,7 +837,7 @@ void CClient::UserCommand(CString& sLine) {
 		}
 
 		if (sMod.empty()) {
-			PutStatus("Usage: UnloadMod [type] <module>");
+			PutStatus("Usage: UnloadMod [--type=global|user|network] <module>");
 			return;
 		}
 
@@ -885,11 +891,12 @@ void CClient::UserCommand(CString& sLine) {
 			return;
 		}
 
-		if (sType.Equals("global")) {
+		// TODO use proper library for parsing arguments
+		if (sType.Equals("--type=global")) {
 			eType = CModInfo::GlobalModule;
-		} else if (sType.Equals("user")) {
+		} else if (sType.Equals("--type=user")) {
 			eType = CModInfo::UserModule;
-		} else if (sType.Equals("network")) {
+		} else if (sType.Equals("--type=network")) {
 			eType = CModInfo::NetworkModule;
 		} else {
 			sMod = sType;
@@ -900,7 +907,7 @@ void CClient::UserCommand(CString& sLine) {
 		}
 
 		if (sMod.empty()) {
-			PutStatus("Usage: ReloadMod [type] <module> [args]");
+			PutStatus("Usage: ReloadMod [--type=global|user|network] <module> [args]");
 			return;
 		}
 
@@ -1001,10 +1008,47 @@ void CClient::UserCommand(CString& sLine) {
 		}
 		PutStatus(Table);
 	} else if ((sCommand.Equals("SETBINDHOST") || sCommand.Equals("SETVHOST")) && (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost())) {
+		if (!m_pNetwork) {
+			PutStatus("You must be connected with a network to use this command. Try SetUserBindHost instead");
+			return;
+		}
 		CString sHost = sLine.Token(1);
 
 		if (sHost.empty()) {
 			PutStatus("Usage: SetBindHost <host>");
+			return;
+		}
+
+		if (sHost.Equals(m_pNetwork->GetBindHost())) {
+			PutStatus("You already have this bind host!");
+			return;
+		}
+
+		const VCString& vsHosts = CZNC::Get().GetBindHosts();
+		if (!m_pUser->IsAdmin() && !vsHosts.empty()) {
+			VCString::const_iterator it;
+			bool bFound = false;
+
+			for (it = vsHosts.begin(); it != vsHosts.end(); ++it) {
+				if (sHost.Equals(*it)) {
+					bFound = true;
+					break;
+				}
+			}
+
+			if (!bFound) {
+				PutStatus("You may not use this bind host. See [ListBindHosts] for a list");
+				return;
+			}
+		}
+
+		m_pNetwork->SetBindHost(sHost);
+		PutStatus("Set bind host for network [" + m_pNetwork->GetName() + "] to [" + m_pNetwork->GetBindHost() + "]");
+	} else if (sCommand.Equals("SETUSERBINDHOST") && (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost())) {
+		CString sHost = sLine.Token(1);
+
+		if (sHost.empty()) {
+			PutStatus("Usage: SetUserBindHost <host>");
 			return;
 		}
 
@@ -1034,8 +1078,20 @@ void CClient::UserCommand(CString& sLine) {
 		m_pUser->SetBindHost(sHost);
 		PutStatus("Set bind host to [" + m_pUser->GetBindHost() + "]");
 	} else if ((sCommand.Equals("CLEARBINDHOST") || sCommand.Equals("CLEARVHOST")) && (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost())) {
+		if (!m_pNetwork) {
+			PutStatus("You must be connected with a network to use this command. Try ClearUserBindHost instead");
+			return;
+		}
+		m_pNetwork->SetBindHost("");
+		PutStatus("Bind host cleared");
+	} else if (sCommand.Equals("CLEARUSERBINDHOST") && (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost())) {
 		m_pUser->SetBindHost("");
-		PutStatus("Bind Host Cleared");
+		PutStatus("Bind host cleared");
+	} else if (sCommand.Equals("SHOWBINDHOST")) {
+		PutStatus("This user's default bind host " + (m_pUser->GetBindHost().empty() ? "not set" : "is [" + m_pUser->GetBindHost() + "]"));
+		if (m_pNetwork) {
+			PutStatus("This network's bind host " + (m_pNetwork->GetBindHost().empty() ? "not set" : "is [" + m_pNetwork->GetBindHost() + "]"));
+		}
 	} else if (sCommand.Equals("PLAYBUFFER")) {
 		if (!m_pNetwork) {
 			PutStatus("You must be connected with a network to use this command");
@@ -1330,7 +1386,7 @@ void CClient::HelpUser() {
 
 	Table.AddRow();
 	Table.SetCell("Command", "ListServers");
-	Table.SetCell("Description", "List all servers");
+	Table.SetCell("Description", "List all servers of current IRC network");
 
 	Table.AddRow();
 	Table.SetCell("Command", "AddNetwork");
@@ -1354,12 +1410,12 @@ void CClient::HelpUser() {
 	Table.AddRow();
 	Table.SetCell("Command", "AddServer");
 	Table.SetCell("Arguments", "<host> [[+]port] [pass]");
-	Table.SetCell("Description", "Add a server to the list");
+	Table.SetCell("Description", "Add a server to the list of alternate/backup servers of current IRC network.");
 
 	Table.AddRow();
 	Table.SetCell("Command", "RemServer");
 	Table.SetCell("Arguments", "<host> [port] [pass]");
-	Table.SetCell("Description", "Remove a server from the list");
+	Table.SetCell("Description", "Remove a server from the list of alternate/backup servers of current IRC network");
 
 	Table.AddRow();
 	Table.SetCell("Command", "Enablechan");
@@ -1417,9 +1473,22 @@ void CClient::HelpUser() {
 		Table.SetCell("Description", "Set the bind host for this connection");
 
 		Table.AddRow();
+		Table.SetCell("Command", "SetUserBindHost");
+		Table.SetCell("Arguments", "<host (IP preferred)>");
+		Table.SetCell("Description", "Set the default bind host for this user");
+
+		Table.AddRow();
 		Table.SetCell("Command", "ClearBindHost");
 		Table.SetCell("Description", "Clear the bind host for this connection");
+
+		Table.AddRow();
+		Table.SetCell("Command", "ClearUserBindHost");
+		Table.SetCell("Description", "Clear the default bind host for this user");
 	}
+
+	Table.AddRow();
+	Table.SetCell("Command", "ShowBindHost");
+	Table.SetCell("Description", "Show currently selected bind host");
 
 	Table.AddRow();
 	Table.SetCell("Command", "Jump [server]");
@@ -1441,17 +1510,17 @@ void CClient::HelpUser() {
 	if (!m_pUser->DenyLoadMod()) {
 		Table.AddRow();
 		Table.SetCell("Command", "LoadMod");
-		Table.SetCell("Arguments", "[type] <module>");
+		Table.SetCell("Arguments", "[--type=global|user|network] <module>");
 		Table.SetCell("Description", "Load a module");
 
 		Table.AddRow();
 		Table.SetCell("Command", "UnloadMod");
-		Table.SetCell("Arguments", "[type] <module>");
+		Table.SetCell("Arguments", "[--type=global|user|network] <module>");
 		Table.SetCell("Description", "Unload a module");
 
 		Table.AddRow();
 		Table.SetCell("Command", "ReloadMod");
-		Table.SetCell("Arguments", "[type] <module>");
+		Table.SetCell("Arguments", "[--type=global|user|network] <module>");
 		Table.SetCell("Description", "Reload a module");
 
 		if (m_pUser->IsAdmin()) {

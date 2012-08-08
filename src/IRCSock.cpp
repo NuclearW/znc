@@ -14,6 +14,10 @@
 #include <znc/znc.h>
 #include <znc/Server.h>
 
+using std::set;
+using std::vector;
+using std::map;
+
 #define IRCSOCKMODULECALL(macFUNC, macEXITER) NETWORKMODULECALL(macFUNC, m_pNetwork->GetUser(), m_pNetwork, NULL, macEXITER)
 // These are used in OnGeneralCTCP()
 const time_t CIRCSock::m_uCTCPFloodTime = 5;
@@ -54,7 +58,7 @@ CIRCSock::CIRCSock(CIRCNetwork* pNetwork) : CZNCSock() {
 	m_iSendsAllowed = m_uFloodBurst;
 	EnableReadLine();
 	m_Nick.SetIdent(m_pNetwork->GetIdent());
-	m_Nick.SetHost(m_pNetwork->GetUser()->GetBindHost());
+	m_Nick.SetHost(m_pNetwork->GetBindHost());
 
 	m_uMaxNickLen = 9;
 	m_uCapPaused = 0;
@@ -921,7 +925,7 @@ bool CIRCSock::OnChanCTCP(CNick& Nick, const CString& sChan, CString& sMessage) 
 		// Record a /me
 		if (sMessage.TrimPrefix("ACTION ")) {
 			IRCSOCKMODULECALL(OnChanAction(Nick, *pChan, sMessage), return true);
-			if (pChan->KeepBuffer() || !m_pNetwork->IsUserOnline() || pChan->IsDetached()) {
+			if (!pChan->AutoClearChanBuffer() || !m_pNetwork->IsUserOnline() || pChan->IsDetached()) {
 				pChan->AddBuffer(":" + _NAMEDFMT(Nick.GetNickMask()) + " PRIVMSG " + _NAMEDFMT(sChan) + " :\001ACTION {text}\001", sMessage);
 			}
 			sMessage = "ACTION " + sMessage;
@@ -939,7 +943,7 @@ bool CIRCSock::OnChanNotice(CNick& Nick, const CString& sChan, CString& sMessage
 	if (pChan) {
 		IRCSOCKMODULECALL(OnChanNotice(Nick, *pChan, sMessage), return true);
 
-		if (pChan->KeepBuffer() || !m_pNetwork->IsUserOnline() || pChan->IsDetached()) {
+		if (!pChan->AutoClearChanBuffer() || !m_pNetwork->IsUserOnline() || pChan->IsDetached()) {
 			pChan->AddBuffer(":" + _NAMEDFMT(Nick.GetNickMask()) + " NOTICE " + _NAMEDFMT(sChan) + " :{text}", sMessage);
 		}
 	}
@@ -952,7 +956,7 @@ bool CIRCSock::OnChanMsg(CNick& Nick, const CString& sChan, CString& sMessage) {
 	if (pChan) {
 		IRCSOCKMODULECALL(OnChanMsg(Nick, *pChan, sMessage), return true);
 
-		if (pChan->KeepBuffer() || !m_pNetwork->IsUserOnline() || pChan->IsDetached()) {
+		if (!pChan->AutoClearChanBuffer() || !m_pNetwork->IsUserOnline() || pChan->IsDetached()) {
 			pChan->AddBuffer(":" + _NAMEDFMT(Nick.GetNickMask()) + " PRIVMSG " + _NAMEDFMT(sChan) + " :{text}", sMessage);
 		}
 	}

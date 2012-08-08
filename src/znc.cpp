@@ -16,6 +16,13 @@
 #include <znc/Listener.h>
 #include <znc/Config.h>
 
+using std::endl;
+using std::cout;
+using std::map;
+using std::set;
+using std::vector;
+using std::list;
+
 static inline CString FormatBindError() {
 	CString sError = (errno == 0 ? CString("unknown error, check the host name") : CString(strerror(errno)));
 	return "Unable to bind [" + sError + "]";
@@ -72,7 +79,7 @@ CZNC::~CZNC() {
 CString CZNC::GetVersion() {
 	char szBuf[128];
 
-	snprintf(szBuf, sizeof(szBuf), "%1.3f"VERSION_EXTRA, VERSION);
+	snprintf(szBuf, sizeof(szBuf), "%1.3f%s", VERSION, ZNC_VERSION_EXTRA);
 	// If snprintf overflows (which I doubt), we want to be on the safe side
 	szBuf[sizeof(szBuf) - 1] = '\0';
 
@@ -87,7 +94,7 @@ CString CZNC::GetTag(bool bIncludeVersion, bool bHTML) {
 	}
 
 	char szBuf[128];
-	snprintf(szBuf, sizeof(szBuf), "ZNC %1.3f"VERSION_EXTRA" - ", VERSION);
+	snprintf(szBuf, sizeof(szBuf), "ZNC %1.3f%s - ", VERSION, ZNC_VERSION_EXTRA);
 	// If snprintf overflows (which I doubt), we want to be on the safe side
 	szBuf[sizeof(szBuf) - 1] = '\0';
 
@@ -526,6 +533,7 @@ bool CZNC::WriteNewConfig(const CString& sConfigFile) {
 	VCString vsLines;
 
 	vsLines.push_back(MakeConfigHeader());
+	vsLines.push_back("Version = " + CString(VERSION, 3));
 
 	m_sConfigFile = ExpandConfigPath(sConfigFile);
 	CUtils::PrintMessage("Building new config");
@@ -686,10 +694,10 @@ bool CZNC::WriteNewConfig(const CString& sConfigFile) {
 		if (uBufferCount) {
 			vsLines.push_back("\tBuffer     = " + CString(uBufferCount));
 		}
-		if (CUtils::GetBoolInput("Would you like to keep buffers after replay?", false)) {
-			vsLines.push_back("\tKeepBuffer = true");
+		if (CUtils::GetBoolInput("Would you like to clear channel buffers after replay?", true)) {
+			vsLines.push_back("\tAutoClearChanBuffer = true");
 		} else {
-			vsLines.push_back("\tKeepBuffer = false");
+			vsLines.push_back("\tAutoClearChanBuffer = false");
 		}
 
 		CUtils::GetInput("Default channel modes", sAnswer, "+stn");
@@ -1095,6 +1103,12 @@ bool CZNC::DoRehash(CString& sError)
 	for (vit = vsList.begin(); vit != vsList.end(); ++vit) {
 		CString sModName = vit->Token(0);
 		CString sArgs = vit->Token(1, true);
+
+		if (sModName == "saslauth" && fSavedVersion < 0.207 + 0.000001) {
+			// XXX compatibility crap, added in 0.207
+			CUtils::PrintMessage("saslauth module was renamed to cyrusauth. Loading cyrusauth instead.");
+			sModName = "cyrusauth";
+		}
 
 		if (msModules.find(sModName) != msModules.end()) {
 			sError = "Module [" + sModName +

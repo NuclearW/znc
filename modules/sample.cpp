@@ -11,6 +11,8 @@
 #include <znc/User.h>
 #include <znc/Modules.h>
 
+using std::vector;
+
 class CSampleTimer : public CTimer {
 public:
 
@@ -243,6 +245,8 @@ public:
 
 template<> void TModInfo<CSampleMod>(CModInfo& Info) {
 	Info.SetWikiPage("sample");
+	Info.SetHasArgs(true);
+	Info.SetArgsHelpText("Description of module arguments goes here.");
 }
 
 USERMODULEDEFS(CSampleMod, "To be used as a sample for writing modules")

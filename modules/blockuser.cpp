@@ -11,6 +11,8 @@
 #include <znc/IRCSock.h>
 #include <znc/znc.h>
 
+using std::vector;
+
 #define MESSAGE "Your account has been disabled. Contact your administrator."
 
 class CBlockUser : public CModule {
@@ -168,6 +170,8 @@ private:
 
 template<> void TModInfo<CBlockUser>(CModInfo& Info) {
 	Info.SetWikiPage("blockuser");
+	Info.SetHasArgs(true);
+	Info.SetArgsHelpText("Enter one or more user names. Seperate them by spaces.");
 }
 
 GLOBALMODULEDEFS(CBlockUser, "Block certain users from logging in")
