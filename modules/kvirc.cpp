@@ -6,8 +6,8 @@
  * by the Free Software Foundation.
  */
 
-#include "Modules.h"
-#include "Nick.h"
+#include <znc/Modules.h>
+#include <znc/Nick.h>
 
 class CKvircMod : public CModule {
 	CString m_sAvatar;
@@ -127,5 +127,9 @@ public:
 		}
 	}
 };
+
+template<> void TModInfo<CKvircMod>(CModInfo& Info) {
+	Info.SetWikiPage("kvirc");
+}
 
 MODULEDEFS(CKvircMod, "Allows to set your gender and avatar, so KVIrc users will see it.")

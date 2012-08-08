@@ -10,6 +10,8 @@
 #include <znc/User.h>
 #include <znc/IRCNetwork.h>
 
+using std::map;
+
 class CTelnetSock : public CSocket {
 	CString m_sName;
 public:
