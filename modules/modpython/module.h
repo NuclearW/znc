@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -180,7 +180,6 @@ public:
 	virtual void ReadData(const char *data, size_t len);
 	virtual void ReadLine(const CString& sLine);
 	virtual Csock* GetSockObj(const CString& sHost, unsigned short uPort);
-	PyObject* WriteBytes(PyObject* data);
 };
 
 inline CPySocket* CreatePySocket(CPyModule* pModule, PyObject* pyObj) {

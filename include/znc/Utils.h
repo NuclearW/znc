@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -45,7 +45,10 @@ public:
 	static void PrintAction(const CString& sMessage);
 	static void PrintStatus(bool bSuccess, const CString& sMessage = "");
 
+#ifndef SWIGPERL
+	// TODO refactor this
 	static const CString sDefaultHash;
+#endif
 
 	static CString GetSaltedHashPass(CString& sSalt);
 	static CString GetSalt();
@@ -138,7 +141,7 @@ public:
 	 *  After calling this you can fill the row with content.
 	 *  @return The index of this row
 	 */
-	unsigned int AddRow();
+	size_type AddRow();
 
 	/** Sets a given cell in the table to a value.
 	 *  @param sColumn The name of the column you want to fill.
@@ -147,7 +150,7 @@ public:
 	 *                 If this is not given, the last row will be used.
 	 *  @return True if setting the cell was successful.
 	 */
-	bool SetCell(const CString& sColumn, const CString& sValue, unsigned int uRowIdx = ~0);
+	bool SetCell(const CString& sColumn, const CString& sValue, size_type uRowIdx = ~0);
 
 	/** Get a line of the table's output
 	 *  @param uIdx The index of the line you want.
@@ -162,7 +165,7 @@ public:
 	 *  @param uIdx The index of the column you are interested in.
 	 *  @return The width of the column.
 	 */
-	unsigned int GetColumnWidth(unsigned int uIdx) const;
+	CString::size_type GetColumnWidth(unsigned int uIdx) const;
 
 	/// Completely clear the table.
 	void Clear();
@@ -177,7 +180,7 @@ private:
 
 protected:
 	std::vector<CString>            m_vsHeaders;
-	std::map<CString, unsigned int> m_msuWidths;  // Used to cache the width of a column
+	std::map<CString, CString::size_type> m_msuWidths;  // Used to cache the width of a column
 };
 
 

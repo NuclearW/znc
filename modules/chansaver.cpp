@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -59,14 +59,14 @@ public:
 	}
 
 	virtual void OnJoin(const CNick& Nick, CChan& Channel) {
-		if (Nick.GetNick() == m_pNetwork->GetIRCNick().GetNick()) {
+		if (Nick.GetNick() == m_pNetwork->GetIRCNick().GetNick() && !Channel.InConfig()) {
 			Channel.SetInConfig(true);
 			CZNC::Get().WriteConfig();
 		}
 	}
 
 	virtual void OnPart(const CNick& Nick, CChan& Channel, const CString& sMessage) {
-		if (Nick.GetNick() == m_pNetwork->GetIRCNick().GetNick()) {
+		if (Nick.GetNick() == m_pNetwork->GetIRCNick().GetNick() && Channel.InConfig()) {
 			Channel.SetInConfig(false);
 			CZNC::Get().WriteConfig();
 		}

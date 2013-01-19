@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -81,8 +81,10 @@ CIRCNetwork::CIRCNetwork(CUser *pUser, const CIRCNetwork &Network) {
 	Clone(Network);
 }
 
-void CIRCNetwork::Clone(const CIRCNetwork& Network) {
-	m_sName = Network.GetName();
+void CIRCNetwork::Clone(const CIRCNetwork& Network, bool bCloneName) {
+	if (bCloneName) {
+		m_sName = Network.GetName();
+	}
 
 	m_fFloodRate = Network.GetFloodRate();
 	m_uFloodBurst = Network.GetFloodBurst();
@@ -104,7 +106,7 @@ void CIRCNetwork::Clone(const CIRCNetwork& Network) {
 
 	DelServers();
 
-	unsigned int a;
+	size_t a;
 	for (a = 0; a < vServers.size(); a++) {
 		CServer* pServer = vServers[a];
 		AddServer(pServer->GetName(), pServer->GetPort(), pServer->GetPass(), pServer->IsSSL());
@@ -286,8 +288,8 @@ bool CIRCNetwork::ParseConfig(CConfig *pConfig, CString& sError, bool bUpgrade) 
 		}
 
 		for (size_t i = 0; i < numSUIntOptions; ++i) {
-			unsigned int value;
-			if (pConfig->FindUIntEntry(SUIntOptions[i].name, value))
+			unsigned short value;
+			if (pConfig->FindUShortEntry(SUIntOptions[i].name, value))
 				(this->*SUIntOptions[i].pSetter)(value);
 		}
 
@@ -311,7 +313,7 @@ bool CIRCNetwork::ParseConfig(CConfig *pConfig, CString& sError, bool bUpgrade) 
 				sModName = "awaystore";
 			}
 
-			CUtils::PrintAction("Loading Module [" + sModName + "]");
+			CUtils::PrintAction("Loading network module [" + sModName + "]");
 			CString sModRet;
 			CString sArgs = sValue.Token(1, true);
 
@@ -327,7 +329,7 @@ bool CIRCNetwork::ParseConfig(CConfig *pConfig, CString& sError, bool bUpgrade) 
 
 	pConfig->FindStringVector("server", vsList);
 	for (vit = vsList.begin(); vit != vsList.end(); ++vit) {
-		CUtils::PrintAction("Adding Server [" + *vit + "]");
+		CUtils::PrintAction("Adding server [" + *vit + "]");
 		CUtils::PrintStatus(AddServer(*vit));
 	}
 
@@ -451,21 +453,30 @@ void CIRCNetwork::ClientConnected(CClient *pClient) {
 
 	m_vClients.push_back(pClient);
 
-	unsigned int uIdx, uSize;
-	MCString msParams;
-	msParams["target"] = GetIRCNick().GetNick();
+	size_t uIdx, uSize;
 
 	if (m_RawBuffer.IsEmpty()) {
 		pClient->PutClient(":irc.znc.in 001 " + pClient->GetNick() + " :- Welcome to ZNC -");
 	} else {
+		const CString& sClientNick = pClient->GetNick(false);
+		MCString msParams;
+		msParams["target"] = sClientNick;
+
 		uSize = m_RawBuffer.Size();
 		for (uIdx = 0; uIdx < uSize; uIdx++) {
 			pClient->PutClient(m_RawBuffer.GetLine(uIdx, *pClient, msParams));
 		}
 
-		// The assumption is that the client got this nick from the 001 reply
-		pClient->SetNick(GetIRCNick().GetNick());
+		const CNick& Nick = GetIRCNick();
+		if (sClientNick != Nick.GetNick()) { // case-sensitive match
+			pClient->PutClient(":" + sClientNick + "!" + Nick.GetIdent() +
+					"@" + Nick.GetHost() + " NICK :" + Nick.GetNick());
+			pClient->SetNick(Nick.GetNick());
+		}
 	}
+
+	MCString msParams;
+	msParams["target"] = GetIRCNick().GetNick();
 
 	// Send the cached MOTD
 	uSize = m_MotdBuffer.Size();
@@ -473,8 +484,6 @@ void CIRCNetwork::ClientConnected(CClient *pClient) {
 		for (uIdx = 0; uIdx < uSize; uIdx++) {
 			pClient->PutClient(m_MotdBuffer.GetLine(uIdx, *pClient, msParams));
 		}
-	} else {
-		pClient->PutClient(":irc.znc.in 422 :MOTD Cache is missing");
  	}
 
 	if (GetIRCSock() != NULL) {
@@ -496,7 +505,7 @@ void CIRCNetwork::ClientConnected(CClient *pClient) {
 	}
 
 	const vector<CChan*>& vChans = GetChans();
-	for (unsigned int a = 0; a < vChans.size(); a++) {
+	for (size_t a = 0; a < vChans.size(); a++) {
 		if ((vChans[a]->IsOn()) && (!vChans[a]->IsDetached())) {
 			vChans[a]->JoinUser(true, "", pClient);
 		}
@@ -505,7 +514,9 @@ void CIRCNetwork::ClientConnected(CClient *pClient) {
 	uSize = m_QueryBuffer.Size();
 	for (uIdx = 0; uIdx < uSize; uIdx++) {
 		CString sLine = m_QueryBuffer.GetLine(uIdx, *pClient, msParams);
-		NETWORKMODULECALL(OnPrivBufferPlayLine(*pClient, sLine), m_pUser, this, NULL, continue);
+		bool bContinue = false;
+		NETWORKMODULECALL(OnPrivBufferPlayLine(*pClient, sLine), m_pUser, this, NULL, &bContinue);
+		if (bContinue) continue;
 		pClient->PutClient(sLine);
 	}
 	m_QueryBuffer.Clear();
@@ -517,7 +528,7 @@ void CIRCNetwork::ClientConnected(CClient *pClient) {
 }
 
 void CIRCNetwork::ClientDisconnected(CClient *pClient) {
-	for (unsigned int a = 0; a < m_vClients.size(); a++) {
+	for (size_t a = 0; a < m_vClients.size(); a++) {
 		if (m_vClients[a] == pClient) {
 			m_vClients.erase(m_vClients.begin() + a);
 			break;
@@ -708,7 +719,9 @@ bool CIRCNetwork::JoinChan(CChan* pChan) {
 		pChan->Disable();
 	} else {
 		pChan->IncJoinTries();
-		NETWORKMODULECALL(OnTimerAutoJoin(*pChan), m_pUser, this, NULL, return false);
+		bool bFailed = false;
+		NETWORKMODULECALL(OnTimerAutoJoin(*pChan), m_pUser, this, NULL, &bFailed);
+		if (bFailed) return false;
 		return true;
 	}
 	return false;
@@ -870,7 +883,7 @@ CServer* CIRCNetwork::GetNextServer() {
 }
 
 CServer* CIRCNetwork::GetCurrentServer() const {
-	unsigned int uIdx = (m_uServerIdx) ? m_uServerIdx -1 : 0;
+	size_t uIdx = (m_uServerIdx) ? m_uServerIdx -1 : 0;
 
 	if (uIdx >= m_vServers.size()) {
 		return NULL;
@@ -950,13 +963,15 @@ bool CIRCNetwork::Connect() {
 
 	DEBUG("Connecting user/network [" << m_pUser->GetUserName() << "/" << m_sName << "]");
 
-	NETWORKMODULECALL(OnIRCConnecting(pIRCSock), m_pUser, this, NULL,
+	bool bAbort = false;
+	NETWORKMODULECALL(OnIRCConnecting(pIRCSock), m_pUser, this, NULL, &bAbort);
+	if (bAbort) {
 		DEBUG("Some module aborted the connection attempt");
 		PutStatus("Some module aborted the connection attempt");
 		delete pIRCSock;
 		CZNC::Get().AddNetworkToQueue(this);
 		return false;
-	);
+	}
 
 	CString sSockName = "IRC::" + m_pUser->GetUserName() + "::" + m_sName;
 	CZNC::Get().GetManager().Connect(pServer->GetName(), pServer->GetPort(), sSockName, 120, bSSL, GetBindHost(), pIRCSock);

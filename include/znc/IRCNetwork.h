@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -33,7 +33,7 @@ public:
 	CIRCNetwork(CUser *pUser, const CIRCNetwork& Network);
 	~CIRCNetwork();
 
-	void Clone(const CIRCNetwork& Network);
+	void Clone(const CIRCNetwork& Network, bool bCloneName = true);
 
 	CString GetNetworkPath();
 
@@ -172,7 +172,7 @@ protected:
 	bool               m_bIRCConnectEnabled;
 	CString            m_sIRCServer;
 	std::vector<CServer*>   m_vServers;
-	unsigned int       m_uServerIdx; ///< Index in m_vServers of our current server + 1
+	size_t             m_uServerIdx; ///< Index in m_vServers of our current server + 1
 
 	CNick              m_IRCNick;
 	bool               m_bIRCAway;

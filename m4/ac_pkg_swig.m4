@@ -55,19 +55,37 @@ AC_DEFUN([AC_PROG_SWIG],[
 
 	# for "python 3 abc set" and "PyInt_FromSize_t in python3" checks
 
-	cat <<-END > conftest.i
+	cat <<-END > conftest-python.i
 		%module conftest;
 		%include <pyabc.i>
 		%include <std_set.i>
 		%template(SInt) std::set<int>;
 	END
-	AC_CACHE_CHECK([for SWIG which produces working output], [znc_cv_path_SWIG], [
+
+	# check if perl has std::...::size_type defined. Don't add new tests to this .i; it'll break this test due to check for "NewPointerObj(("
+
+	cat <<-END > conftest-perl.i
+		%module conftest;
+		%include <std_vector.i>
+		%include <std_list.i>
+		%include <std_deque.i>
+		%template() std::vector<int>;
+		%template() std::list<int>;
+		%template() std::deque<int>;
+		std::vector<int>::size_type checkVector();
+		std::list<int>::size_type checkList();
+		std::deque<int>::size_type checkDeque();
+	END
+	SWIG_installed_versions=""
+	AC_CACHE_CHECK([for SWIG >= $1], [znc_cv_path_SWIG], [
 		AC_PATH_PROGS_FEATURE_CHECK([SWIG], [swig swig2.0], [
 			echo trying $ac_path_SWIG >&AS_MESSAGE_LOG_FD
 			$ac_path_SWIG -version >&AS_MESSAGE_LOG_FD
 			[swig_version=`$ac_path_SWIG -version 2>&1 | grep 'SWIG Version' | sed 's/.*\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/g'`]
 			if test -n "$swig_version"; then
 				swig_right_version=1
+
+				SWIG_installed_versions="$SWIG_installed_versions $swig_version "
 
 				if test -n "$required"; then
 					# Calculate the available version number components
@@ -102,18 +120,31 @@ AC_DEFUN([AC_PROG_SWIG],[
 				fi
 				
 				if test $swig_right_version -eq 1; then
-					# "python 3 abc set" and "PyInt_FromSize_t in python3" checks
-					echo "checking behavior of SWIG" >&AS_MESSAGE_LOG_FD
+					# "python 3 abc set", "PyInt_FromSize_t in python3" and "perl size_type" checks
+					echo "checking behavior of this SWIG" >&AS_MESSAGE_LOG_FD
 
-					$ac_path_SWIG -python -py3 -c++ -shadow conftest.i >&AS_MESSAGE_LOG_FD && \
-						echo "wrapper created" >&AS_MESSAGE_LOG_FD && \
+					$ac_path_SWIG -python -py3 -c++ -shadow conftest-python.i >&AS_MESSAGE_LOG_FD && \
+						echo "python wrapper created" >&AS_MESSAGE_LOG_FD && \
+						echo "testing std::set... ">&AS_MESSAGE_LOG_FD && \
 						grep SInt_discard conftest.py >& /dev/null && \
 						echo "std::set works" >&AS_MESSAGE_LOG_FD && \
-						grep '#define PyInt_FromSize_t' conftest_wrap.cxx >& /dev/null && \
+						echo "testing PyInt_FromSize_t..." >&AS_MESSAGE_LOG_FD && \
+						grep '#define PyInt_FromSize_t' conftest-python_wrap.cxx >& /dev/null && \
 						echo "PyInt_FromSize_t is defined" >&AS_MESSAGE_LOG_FD && \
-						znc_cv_path_SWIG=$ac_path_SWIG \
+					$ac_path_SWIG -perl -c++ -shadow conftest-perl.i >&AS_MESSAGE_LOG_FD && \
+						echo "perl wrapper created" >&AS_MESSAGE_LOG_FD && \
+						echo "testing size_type..." >&AS_MESSAGE_LOG_FD && \
+						test 0 -eq `grep -c 'NewPointerObj((' conftest-perl_wrap.cxx` && \
+						echo "size_type work" >&AS_MESSAGE_LOG_FD && \
+					znc_cv_path_SWIG=$ac_path_SWIG \
 						ac_path_SWIG_found=:
-					rm -f conftest_wrap.cxx conftest.py
+					if test "x$ac_path_SWIG_found" != "x:"; then
+						echo "fail" >&AS_MESSAGE_LOG_FD
+					fi
+					rm -f conftest-python_wrap.cxx conftest.py
+					rm -f conftest-perl_wrap.cxx conftest.pm
+
+
 				else
 					echo "SWIG version >= $1 is required.  You have '$swig_version'" >&AS_MESSAGE_LOG_FD
 				fi
@@ -121,7 +152,10 @@ AC_DEFUN([AC_PROG_SWIG],[
 			echo end trying $ac_path_SWIG >&AS_MESSAGE_LOG_FD
 		])
 	])
-	rm -f conftest.i
+	rm -f conftest-python.i conftest-perl.i
+	if test -n "$SWIG_installed_versions"; then
+		AC_MSG_NOTICE([Following SWIG versions are found:$SWIG_installed_versions])
+	fi
 
 	AC_SUBST([SWIG], [$znc_cv_path_SWIG])
 	if test -n "$SWIG"; then

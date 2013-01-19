@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -21,7 +21,7 @@ static const struct {
 } SupportedMechanisms[] = {
 	{ "EXTERNAL",           "TLS certificate, for use with the *cert module", false },
 #ifdef HAVE_SASL_MECHANISM
-	{ "DH-BLOWFISH",        "", true },
+	{ "DH-BLOWFISH",        "Secure negotiation using the DH-BLOWFISH mechanism", true },
 #endif
 	{ "PLAIN",              "Plain text negotiation", true },
 	{ NULL, NULL, false }
@@ -211,7 +211,7 @@ public:
 		/* Decode base64 into (data, length) */
 		CString sData = sLine.Base64Decode_n();
 		const unsigned char *data = (const unsigned char*)sData.c_str();
-		unsigned int length = sLine.size();
+		CString::size_type length = sLine.size();
 
 		DH *dh = DH_new();
 
@@ -222,8 +222,7 @@ public:
 		}
 
 		/* Prime number */
-		unsigned int size = ntohs((((unsigned int)data[1]) << 8) | data[0]);
-		size = ntohs(*(unsigned int*)data);
+		unsigned int size = ntohs(*(uint16_t*)data);
 		data += 2;
 		length -= 2;
 
@@ -243,8 +242,7 @@ public:
 			return false;
 		}
 
-		size = ntohs((((unsigned int)data[1]) << 8) | data[0]);
-		size = ntohs(*(unsigned int*)data);
+		size = ntohs(*(uint16_t*)data);
 		data += 2;
 		length -= 2;
 
@@ -258,8 +256,7 @@ public:
 		data += size;
 
 		/* Server public key */
-		size = ntohs((((unsigned int)data[1]) << 8) | data[0]);
-		size = ntohs(*(unsigned int*)data);
+		size = ntohs(*(uint16_t*)data);
 		data += 2;
 		length -= 2;
 
@@ -289,7 +286,8 @@ public:
 		}
 
 		/* Encrypt our sasl password with blowfish */
-		int password_length = GetNV("password").size() + (8 - (GetNV("password").size() % 8));
+		// TODO for passwords with length 8, 16, 24, 32, etc. this will have 8 additional zero bytes at the end... But it works when treated as null-terminated string anyway, and if it works I don't want to touch it right now.
+		CString::size_type password_length = GetNV("password").size() + (8 - (GetNV("password").size() % 8));
 		unsigned char *encrypted_password = (unsigned char *)malloc(password_length);
 		char *plaintext_password = (char *)malloc(password_length);
 
@@ -315,15 +313,15 @@ public:
 		out_ptr = response;
 
 		/* Add our key to the response */
-		*((unsigned int *)out_ptr) = htons(BN_num_bytes(dh->pub_key));
+		*((uint16_t *)out_ptr) = htons((uint16_t)BN_num_bytes(dh->pub_key));
 		out_ptr += 2;
 		BN_bn2bin(dh->pub_key, (unsigned char *)out_ptr);
 		out_ptr += BN_num_bytes(dh->pub_key);
 		DH_free(dh);
 
 		/* Add sasl username to response */
-		memcpy(out_ptr, GetNV("username").c_str(), GetNV("username").size());
-		out_ptr += GetNV("username").size() + 1;
+		memcpy(out_ptr, GetNV("username").c_str(), GetNV("username").length() + 1); // +1 for zero byte in the end
+		out_ptr += GetNV("username").length() + 1;
 
 		/* Finally add the encrypted password to the response */
 		memcpy(out_ptr, encrypted_password, password_length);

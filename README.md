@@ -1,4 +1,3 @@
-
 #[![ZNC](http://wiki.znc.in/skins/common/images/wiki.png)](http://znc.in) - An advanced IRC bouncer
 
 ## Table of contents
@@ -45,6 +44,7 @@ saslauth:
 Installation is done with the `./configure ; make ; make install` commands.
 
 If you are building from git, you will need to run `./autogen.sh` first to produce the `configure` script.
+Note that this requires `automake` to be installed.
 
 You can use
 	./configure --help
@@ -140,8 +140,7 @@ running make or with the znc-buildmod shell script.
 
 For additional info look in the wiki:
 
-- [Writing Modules](http://wiki.znc.in/WritingModules)
-- [Module Hooks](http://wiki.znc.in/ModuleHooks)
+- [Writing modules](http://wiki.znc.in/Writing_modules)
 
 Perl modules are loaded through the global module [ModPerl](http://wiki.znc.in/Modperl).
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -85,11 +85,18 @@ void CClient::ReadLine(const CString& sData) {
 
 	DEBUG("(" << GetFullName() << ") CLI -> ZNC [" << sLine << "]");
 
-	if (IsAttached()) {
-		NETWORKMODULECALL(OnUserRaw(sLine), m_pUser, m_pNetwork, this, return);
-	} else {
-		GLOBALMODULECALL(OnUnknownUserRaw(this, sLine), return);
+	if (sLine.Left(1) == "@") {
+		// TODO support message-tags properly
+		sLine = sLine.Token(1, true);
 	}
+
+	bool bReturn = false;
+	if (IsAttached()) {
+		NETWORKMODULECALL(OnUserRaw(sLine), m_pUser, m_pNetwork, this, &bReturn);
+	} else {
+		GLOBALMODULECALL(OnUnknownUserRaw(this, sLine), &bReturn);
+	}
+	if (bReturn) return;
 
 	CString sCommand = sLine.Token(0);
 	if (sCommand.Left(1) == ":") {
@@ -227,11 +234,13 @@ void CClient::ReadLine(const CString& sData) {
 			sCTCP.LeftChomp();
 			sCTCP.RightChomp();
 
-			NETWORKMODULECALL(OnUserCTCPReply(sTarget, sCTCP), m_pUser, m_pNetwork, this, return);
+			NETWORKMODULECALL(OnUserCTCPReply(sTarget, sCTCP), m_pUser, m_pNetwork, this, &bReturn);
+			if (bReturn) return;
 
 			sMsg = "\001" + sCTCP + "\001";
 		} else {
-			NETWORKMODULECALL(OnUserNotice(sTarget, sMsg), m_pUser, m_pNetwork, this, return);
+			NETWORKMODULECALL(OnUserNotice(sTarget, sMsg), m_pUser, m_pNetwork, this, &bReturn);
+			if (bReturn) return;
 		}
 
 		if (!GetIRCSock()) {
@@ -288,7 +297,8 @@ void CClient::ReadLine(const CString& sData) {
 
 				if (sCTCP.Token(0).Equals("ACTION")) {
 					CString sMessage = sCTCP.Token(1, true);
-					NETWORKMODULECALL(OnUserAction(sTarget, sMessage), m_pUser, m_pNetwork, this, return);
+					NETWORKMODULECALL(OnUserAction(sTarget, sMessage), m_pUser, m_pNetwork, this, &bReturn);
+					if (bReturn) return;
 					sCTCP = "ACTION " + sMessage;
 
 					if (pChan && (!pChan->AutoClearChanBuffer() || !m_pNetwork->IsUserOnline())) {
@@ -308,7 +318,8 @@ void CClient::ReadLine(const CString& sData) {
 						}
 					}
 				} else {
-					NETWORKMODULECALL(OnUserCTCP(sTarget, sCTCP), m_pUser, m_pNetwork, this, return);
+					NETWORKMODULECALL(OnUserCTCP(sTarget, sCTCP), m_pUser, m_pNetwork, this, &bReturn);
+					if (bReturn) return;
 				}
 
 				PutIRC("PRIVMSG " + sTarget + " :\001" + sCTCP + "\001");
@@ -326,7 +337,8 @@ void CClient::ReadLine(const CString& sData) {
 			return;
 		}
 
-		NETWORKMODULECALL(OnUserMsg(sTarget, sMsg), m_pUser, m_pNetwork, this, return);
+		NETWORKMODULECALL(OnUserMsg(sTarget, sMsg), m_pUser, m_pNetwork, this, &bReturn);
+		if (bReturn) return;
 
 		if (!GetIRCSock()) {
 			// Some lagmeters do a PRIVMSG to their own nick, ignore those.
@@ -368,20 +380,31 @@ void CClient::ReadLine(const CString& sData) {
 	}
 
 	if (sCommand.Equals("DETACH")) {
-		CString sChan = sLine.Token(1);
+		CString sChannels = sLine.Token(1).TrimPrefix_n();
 
-		if (sChan.empty()) {
+		if (sChannels.empty()) {
 			PutStatusNotice("Usage: /detach <#chan>");
 			return;
 		}
 
-		CChan* pChan = m_pNetwork->FindChan(sChan);
-		if (!pChan) {
-			PutStatusNotice("You are not on [" + sChan + "]");
-			return;
+		VCString vChans;
+		sChannels.Split(",", vChans, false);
+		sChannels.clear();
+
+		for (VCString::const_iterator channelIterator = vChans.begin();
+				channelIterator != vChans.end();
+				++channelIterator)
+		{
+			CString sChannel = *channelIterator;
+
+			CChan *pChannel = m_pNetwork->FindChan(sChannel);
+			if (pChannel) {
+				pChannel->DetachUser();
+			} else {
+				PutStatusNotice("You are not on [" + sChannel + "]");
+			}
 		}
 
-		pChan->DetachUser();
 		return;
 	} else if (sCommand.Equals("JOIN")) {
 		CString sChans = sLine.Token(1).TrimPrefix_n();
@@ -393,7 +416,9 @@ void CClient::ReadLine(const CString& sData) {
 
 		for (unsigned int a = 0; a < vChans.size(); a++) {
 			CString sChannel = vChans[a];
-			NETWORKMODULECALL(OnUserJoin(sChannel, sKey), m_pUser, m_pNetwork, this, continue);
+			bool bContinue = false;
+			NETWORKMODULECALL(OnUserJoin(sChannel, sKey), m_pUser, m_pNetwork, this, &bContinue);
+			if (bContinue) continue;
 
 			CChan* pChan = m_pNetwork->FindChan(sChannel);
 			if (pChan) {
@@ -425,7 +450,9 @@ void CClient::ReadLine(const CString& sData) {
 
 		for (VCString::const_iterator it = vChans.begin(); it != vChans.end(); ++it) {
 			CString sChan = *it;
-			NETWORKMODULECALL(OnUserPart(sChan, sMessage), m_pUser, m_pNetwork, this, continue);
+			bool bContinue = false;
+			NETWORKMODULECALL(OnUserPart(sChan, sMessage), m_pUser, m_pNetwork, this, &bContinue);
+			if (bContinue) continue;
 
 			CChan* pChan = m_pNetwork->FindChan(sChan);
 
@@ -451,10 +478,12 @@ void CClient::ReadLine(const CString& sData) {
 		CString sTopic = sLine.Token(2, true).TrimPrefix_n();
 
 		if (!sTopic.empty()) {
-			NETWORKMODULECALL(OnUserTopic(sChan, sTopic), m_pUser, m_pNetwork, this, return);
+			NETWORKMODULECALL(OnUserTopic(sChan, sTopic), m_pUser, m_pNetwork, this, &bReturn);
+			if (bReturn) return;
 			sLine = "TOPIC " + sChan + " :" + sTopic;
 		} else {
-			NETWORKMODULECALL(OnUserTopicRequest(sChan), m_pUser, m_pNetwork, this, return);
+			NETWORKMODULECALL(OnUserTopicRequest(sChan), m_pUser, m_pNetwork, this, &bReturn);
+			if (bReturn) return;
 		}
 	} else if (sCommand.Equals("MODE")) {
 		CString sTarget = sLine.Token(1);
@@ -659,19 +688,7 @@ void CClient::AcceptLogin(CUser& User) {
 			PutStatusNotice("If you want to choose another network, use /znc JumpNetwork <network>, or connect to ZNC with username " + m_pUser->GetUserName() + "/<network> (instead of just " + m_pUser->GetUserName() + ")");
 		}
 	} else {
-#ifndef ENABLE_ADD_NETWORK
-		if (!m_pUser->IsAdmin()) {
-			/* Since this user cannot add his own network,
-			 * lets make them a default network */
-			m_pNetwork = m_pUser->AddNetwork("default");
-		} else {
-#endif
-
 		PutStatusNotice("You have no networks configured. Use /znc AddNetwork <network> to add one.");
-
-#ifndef ENABLE_ADD_NETWORK
-		}
-#endif
 	}
 
 	SetNetwork(m_pNetwork, false);
@@ -761,12 +778,18 @@ void CClient::PutModNotice(const CString& sModule, const CString& sLine) {
 }
 
 void CClient::PutModule(const CString& sModule, const CString& sLine) {
+	VCString vsLines;
+	VCString::iterator it;
 	if (!m_pUser) {
 		return;
 	}
 
 	DEBUG("(" << GetFullName() << ") ZNC -> CLI [:" + m_pUser->GetStatusPrefix() + ((sModule.empty()) ? "status" : sModule) + "!znc@znc.in PRIVMSG " << GetNick() << " :" << sLine << "]");
-	Write(":" + m_pUser->GetStatusPrefix() + ((sModule.empty()) ? "status" : sModule) + "!znc@znc.in PRIVMSG " + GetNick() + " :" + sLine + "\r\n");
+
+	sLine.Split("\n", vsLines);
+	for (it = vsLines.begin(); it != vsLines.end(); ++it) {
+		Write(":" + m_pUser->GetStatusPrefix() + ((sModule.empty()) ? "status" : sModule) + "!znc@znc.in PRIVMSG " + GetNick() + " :" + (*it) + "\r\n");
+	}
 }
 
 CString CClient::GetNick(bool bAllowIRCNick) const {
@@ -810,7 +833,7 @@ void CClient::HandleCap(const CString& sLine)
 		for (SCString::iterator i = ssOfferCaps.begin(); i != ssOfferCaps.end(); ++i) {
 			sRes += *i + " ";
 		}
-		RespondCap("LS :" + sRes + "userhost-in-names multi-prefix server-time");
+		RespondCap("LS :" + sRes + "userhost-in-names multi-prefix znc.in/server-time-iso");
 		m_bInCap = true;
 	} else if (sSubCmd.Equals("END")) {
 		m_bInCap = false;
@@ -832,8 +855,8 @@ void CClient::HandleCap(const CString& sLine)
 			if (sCap.TrimPrefix("-"))
 				bVal = false;
 
-			bool bAccepted = ("multi-prefix" == sCap) || ("userhost-in-names" == sCap) || ("server-time" == sCap);
-			GLOBALMODULECALL(IsClientCapSupported(this, sCap, bVal), bAccepted = true);
+			bool bAccepted = ("multi-prefix" == sCap) || ("userhost-in-names" == sCap) || ("znc.in/server-time-iso" == sCap);
+			GLOBALMODULECALL(IsClientCapSupported(this, sCap, bVal), &bAccepted);
 
 			if (!bAccepted) {
 				// Some unsupported capability is requested
@@ -852,7 +875,7 @@ void CClient::HandleCap(const CString& sLine)
 				m_bNamesx = bVal;
 			} else if ("userhost-in-names" == *it) {
 				m_bUHNames = bVal;
-			} else if ("server-time" == *it) {
+			} else if ("znc.in/server-time-iso" == *it) {
 				m_bServerTime = bVal;
 			}
 			GLOBALMODULECALL(OnClientCapRequest(this, *it, bVal), NOTHING);
@@ -875,7 +898,7 @@ void CClient::HandleCap(const CString& sLine)
 		SCString ssRemoved;
 		for (SCString::iterator i = m_ssAcceptedCaps.begin(); i != m_ssAcceptedCaps.end(); ++i) {
 			bool bRemoving = false;
-			GLOBALMODULECALL(IsClientCapSupported(this, *i, false), bRemoving = true);
+			GLOBALMODULECALL(IsClientCapSupported(this, *i, false), &bRemoving);
 			if (bRemoving) {
 				GLOBALMODULECALL(OnClientCapRequest(this, *i, false), NOTHING);
 				ssRemoved.insert(*i);
@@ -891,7 +914,7 @@ void CClient::HandleCap(const CString& sLine)
 		}
 		if (m_bServerTime) {
 			m_bServerTime = false;
-			ssRemoved.insert("server-time");
+			ssRemoved.insert("znc.in/server-time-iso");
 		}
 		CString sList = "";
 		for (SCString::iterator i = ssRemoved.begin(); i != ssRemoved.end(); ++i) {

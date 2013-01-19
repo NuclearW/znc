@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -51,7 +51,7 @@ void CNick::Parse(const CString& sNickMask) {
 	}
 }
 
-unsigned int CNick::GetCommonChans(vector<CChan*>& vRetChans, CIRCNetwork* pNetwork) const {
+size_t CNick::GetCommonChans(vector<CChan*>& vRetChans, CIRCNetwork* pNetwork) const {
 	vRetChans.clear();
 
 	const vector<CChan*>& vChans = pNetwork->GetChans();

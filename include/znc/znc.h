@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -140,7 +140,7 @@ public:
 	// Listener yummy
 	CListener* FindListener(u_short uPort, const CString& BindHost, EAddrType eAddr);
 	bool AddListener(CListener*);
-	bool AddListener(unsigned int uPort, const CString& sBindHost, bool bSSL,
+	bool AddListener(unsigned short uPort, const CString& sBindHost, bool bSSL,
 			EAddrType eAddr, CListener::EAcceptType eAccept, CString& sError);
 	bool DelListener(CListener*);
 

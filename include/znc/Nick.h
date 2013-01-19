@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -28,7 +28,7 @@ public:
 	void Reset();
 	void Parse(const CString& sNickMask);
 	CString GetHostMask() const;
-	unsigned int GetCommonChans(std::vector<CChan*>& vChans, CIRCNetwork* pNetwork) const;
+	size_t GetCommonChans(std::vector<CChan*>& vChans, CIRCNetwork* pNetwork) const;
 
 	// Setters
 	void SetNetwork(CIRCNetwork* pNetwork);

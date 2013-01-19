@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -875,6 +875,8 @@ public:
 	bool ClearNV(bool bWriteToDisk = true);
 
 	const CString& GetSavePath() const;
+	CString ExpandString(const CString& sStr) const;
+	CString& ExpandString(const CString& sStr, CString& sRet) const;
 
 	// Setters
 	void SetType(CModInfo::EModuleType eType) { m_eType = eType; }

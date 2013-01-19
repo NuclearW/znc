@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -63,10 +63,13 @@ public:
 		m_pPerl = perl_alloc();
 		perl_construct(m_pPerl);
 		if (perl_parse(m_pPerl, xs_init, argc, argv, environ)) {
+			sMessage = "Can't initialize perl. ";
+			if (SvTRUE(ERRSV)) {
+				sMessage += PString(ERRSV);
+			}
 			perl_free(m_pPerl);
 			PERL_SYS_TERM();
 			m_pPerl = NULL;
-			sMessage = "Can't initialize perl.";
 			DEBUG(__PRETTY_FUNCTION__ << " can't init perl");
 			return false;
 		}
@@ -208,7 +211,7 @@ public:
 				PUSH_STR(sName);
 				PUSH_PTR(CModInfo*, &ModInfo);
 				PCALL("ZNC::Core::ModInfoByPath");
-				if (!SvTRUE(ERRSV) && ret == 2) {
+				if (!SvTRUE(ERRSV)) {
 					ssMods.insert(ModInfo);
 				}
 				PEND;

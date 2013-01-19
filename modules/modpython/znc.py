@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2004-2012  See the AUTHORS file for details.
+# Copyright (C) 2004-2013  See the AUTHORS file for details.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License version 2 as published
@@ -153,6 +153,9 @@ class Module:
     module_types = [CModInfo.NetworkModule]
 
     wiki_page = ''
+
+    has_args = False
+    args_help_text = ''
 
     def __str__(self):
         return self.GetModName()
@@ -572,7 +575,17 @@ def unload_module(module):
 def unload_all():
     while len(_py_modules) > 0:
         mod = _py_modules.pop()
+        # add it back to set, otherwise unload_module will be sad
+        _py_modules.add(mod)
         unload_module(mod)
+
+
+def gather_mod_info(cl, modinfo):
+    modinfo.SetDescription(cl.description)
+    modinfo.SetWikiPage(cl.wiki_page)
+    modinfo.SetDefaultType(cl.module_types[0])
+    for module_type in cl.module_types:
+        modinfo.AddType(module_type)
 
 
 def get_mod_info(modname, retmsg, modinfo):
@@ -585,13 +598,9 @@ def get_mod_info(modname, retmsg, modinfo):
             pymodule.__file__, modname)
         return 1
     cl = pymodule.__dict__[modname]
-    modinfo.SetDefaultType(cl.module_types[0])
-    for module_type in cl.module_types:
-        modinfo.AddType(module_type)
-    modinfo.SetDescription(cl.description)
-    modinfo.SetWikiPage(cl.wiki_page)
     modinfo.SetName(modname)
     modinfo.SetPath(pymodule.__file__)
+    gather_mod_info(cl, modinfo)
     return 2
 
 
@@ -616,14 +625,9 @@ def get_mod_info_path(path, modname, modinfo):
     if modname not in pymodule.__dict__:
         return 0
     cl = pymodule.__dict__[modname]
-    modinfo.SetDescription(cl.description)
-    modinfo.SetWikiPage(cl.wiki_page)
     modinfo.SetName(modname)
     modinfo.SetPath(pymodule.__file__)
-    modinfo.SetDefaultType(cl.module_types[0])
-    for module_type in cl.module_types:
-        modinfo.AddType(module_type)
-
+    gather_mod_info(cl, modinfo)
     return 1
 
 

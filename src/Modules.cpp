@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -18,6 +18,8 @@
 using std::map;
 using std::set;
 using std::vector;
+
+bool ZNC_NO_NEED_TO_DO_ANYTHING_ON_MODULE_CALL_EXITER;
 
 #ifndef RTLD_LOCAL
 # define RTLD_LOCAL 0
@@ -152,6 +154,25 @@ CModule::~CModule() {
 void CModule::SetUser(CUser* pUser) { m_pUser = pUser; }
 void CModule::SetNetwork(CIRCNetwork* pNetwork) { m_pNetwork = pNetwork; }
 void CModule::SetClient(CClient* pClient) { m_pClient = pClient; }
+
+CString CModule::ExpandString(const CString& sStr) const {
+	CString sRet;
+	return ExpandString(sStr, sRet);
+}
+
+CString& CModule::ExpandString(const CString& sStr, CString& sRet) const {
+	sRet = sStr;
+
+	if (m_pNetwork) {
+		return m_pNetwork->ExpandString(sRet, sRet);
+	}
+
+	if (m_pUser) {
+		return m_pUser->ExpandString(sRet, sRet);
+	}
+
+	return sRet;
+}
 
 const CString& CModule::GetSavePath() const {
 	if (!CFile::Exists(m_sSavePath)) {
@@ -476,7 +497,7 @@ bool CModule::HandleCommand(const CString& sLine) {
 
 void CModule::HandleHelpCommand(const CString& sLine) {
 	CString sFilter = sLine.Token(1, true);
-	unsigned int iFilterLength = sFilter.size();
+	CString::size_type  iFilterLength = sFilter.size();
 	CTable Table;
 	map<CString, CModCommand>::const_iterator it;
 
@@ -868,7 +889,9 @@ bool CModules::LoadModule(const CString& sModule, const CString& sArgs, CModInfo
 	}
 
 	bool bSuccess;
-	_GLOBALMODULECALL(OnModuleLoading(sModule, sArgs, eType, bSuccess, sRetMsg), pUser, pNetwork, NULL, return bSuccess);
+	bool bHandled = false;
+	_GLOBALMODULECALL(OnModuleLoading(sModule, sArgs, eType, bSuccess, sRetMsg), pUser, pNetwork, NULL, &bHandled);
+	if (bHandled) return bSuccess;
 
 	CString sModPath, sDataPath;
 	bool bVersionMismatch;
@@ -956,7 +979,9 @@ bool CModules::UnloadModule(const CString& sModule, CString& sRetMsg) {
 	}
 
 	bool bSuccess;
-	_GLOBALMODULECALL(OnModuleUnloading(pModule, bSuccess, sRetMsg), pModule->GetUser(), pModule->GetNetwork(), NULL, return bSuccess);
+	bool bHandled = false;
+	_GLOBALMODULECALL(OnModuleUnloading(pModule, bSuccess, sRetMsg), pModule->GetUser(), pModule->GetNetwork(), NULL, &bHandled);
+	if (bHandled) return bSuccess;
 
 	ModHandle p = pModule->GetDLL();
 
@@ -1009,7 +1034,9 @@ bool CModules::GetModInfo(CModInfo& ModInfo, const CString& sModule, CString& sR
 	CString sModPath, sTmp;
 
 	bool bSuccess;
-	GLOBALMODULECALL(OnGetModInfo(ModInfo, sModule, bSuccess, sRetMsg), return bSuccess);
+	bool bHandled = false;
+	GLOBALMODULECALL(OnGetModInfo(ModInfo, sModule, bSuccess, sRetMsg), &bHandled);
+	if (bHandled) return bSuccess;
 
 	if (!FindModPath(sModule, sModPath, sTmp)) {
 		sRetMsg = "Unable to find module [" + sModule + "]";

@@ -7,7 +7,7 @@ AC_DEFUN([AC_PROG_CC], [m4_errprint(__file__:__line__[: Something is trying to u
 dnl Needed for AC_PATH_PROGS_FEATURE_CHECK which was added in 2.62
 AC_PREREQ([2.62])
 dnl Keep the version number in sync with main.h!
-AC_INIT([znc], [0.207])
+AC_INIT([znc], [1.1])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([src/znc.cpp])
 AC_LANG([C++])
@@ -90,6 +90,8 @@ case "${host_os}" in
 	;;
 esac
 
+PKG_PROG_PKG_CONFIG()
+
 AC_ARG_WITH( [openssl],
 	AS_HELP_STRING([--with-openssl=DIR], [openssl installation prefix]),
 	[OPENSSL=$withval],)
@@ -146,17 +148,29 @@ AC_ARG_ENABLE( [poll],
 	AS_HELP_STRING([--disable-poll], [use select() instead of poll()]),
 	[POLL="$enableval"],
 	[POLL="yes"])
-AC_ARG_ENABLE([add-networks],
-	AS_HELP_STRING([--enable-add-networks], [allow non-admins to add networks]),
-	[ if test x"$enableval" = "xyes" ; then appendCXX "-DENABLE_ADD_NETWORK" ; fi ])
+
+AC_ARG_WITH([systemdsystemunitdir],
+	AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd service files]),
+	[
+		if test x"$with_systemdsystemunitdir" = xyes; then
+			with_systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)
+		fi
+	])
+if test "x$with_systemdsystemunitdir" != xno; then
+	AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
+fi
+AM_CONDITIONAL(HAVE_SYSTEMD, [test -n "$with_systemdsystemunitdir" -a "x$with_systemdsystemunitdir" != xno ])
 
 if test "$DEBUG" != "no"; then
 	appendCXX -ggdb3
 	AC_DEFINE([_DEBUG], [1], [Define for debugging])
-	# These enable some debug options in g++'s STL, e.g. invalid use of iterators
-	AC_DEFINE([_GLIBCXX_DEBUG], [1], [Enable extra debugging checks in libstdc++])
-	AC_DEFINE([_GLIBCXX_DEBUG_PEDANTIC], [1], [Enable extra debugging checks in libstdc++])
-	AC_DEFINE([_GLIBCXX_CONCEPT_CHECKS], [1], [Enable extra debugging checks in libstdc++])
+	if test "x$ISCYGWIN" != x1; then
+		# These enable some debug options in g++'s STL, e.g. invalid use of iterators
+		# But they cause crashes on cygwin while loading modules
+		AC_DEFINE([_GLIBCXX_DEBUG], [1], [Enable extra debugging checks in libstdc++])
+		AC_DEFINE([_GLIBCXX_DEBUG_PEDANTIC], [1], [Enable extra debugging checks in libstdc++])
+		AC_DEFINE([_GLIBCXX_CONCEPT_CHECKS], [1], [Enable extra debugging checks in libstdc++])
+	fi
 else
 	if test "x$OPTIMIZE" = "xyes"; then
 		appendCXX -O2
@@ -194,17 +208,11 @@ fi
 
 AC_CHECK_LIB( gnugetopt, getopt_long,)
 AC_CHECK_FUNCS([lstat getopt_long getphassphrase])
-PKG_PROG_PKG_CONFIG()
 
 # ----- Check for dlopen
 
 AC_SEARCH_LIBS([dlopen], [dl], [],
 		[AC_MSG_ERROR([Could not find dlopen. ZNC will not work on this box until you upgrade this ancient system or at least install the necessary system libraries.])])
-
-# ----- librt is needed for clock_gettime
-# if it exists, _POSIX_TIMERS should be defined to a value > 0 (in unistd.h)
-
-AC_SEARCH_LIBS([clock_gettime], [rt])
 
 # ----- Check for pthreads
 
@@ -220,6 +228,7 @@ if test "x$TDNS" != "xno"; then
 				#include <netdb.h>
 			]], [[
 				int x = AI_ADDRCONFIG;
+				(void) x;
 			]])
 		], [
 			AC_MSG_RESULT([yes])
@@ -266,6 +275,28 @@ if test "x$SSL" != "xno"; then
 		AC_CHECK_LIB( crypto, BIO_new,, SSL=no )
 		AC_CHECK_LIB( ssl, SSL_shutdown,, SSL=no )
 	])
+
+	if test "x$SSL" != "xno"; then
+		AC_MSG_CHECKING([whether openssl is usable])
+		AC_LINK_IFELSE([
+			AC_LANG_PROGRAM([[
+				#include <openssl/ssl.h>
+			]], [[
+				SSL_CTX* ctx = SSL_CTX_new(TLSv1_method());
+				SSL* ssl = SSL_new(ctx);
+				DH* dh = DH_new();
+				DH_free(dh);
+				SSL_free(ssl);
+				SSL_CTX_free(ctx);
+			]])
+		], [
+			AC_MSG_RESULT([yes])
+		], [
+			AC_MSG_RESULT([no])
+			SSL=no
+		])
+		
+	fi
 
 	if test "x$SSL" = "xno" ; then
 		ZNC_AUTO_FAIL([SSL],
@@ -326,15 +357,20 @@ if test "x$PERL" != xno -o "x$PYTHON" != xno; then
 		AC_PROG_SWIG([2.0.8])
 		test -z "$SWIG" && USESWIG=no
 		if test "x$USESWIG" = xno -a "x$old_USESWIG" = yes; then
-			AC_MSG_ERROR([Could not found appropriate SWIG installation])
+			AC_MSG_ERROR([Could not found appropriate SWIG installation. Check config.log for details.])
 		fi
 	fi
+	if test -r "$srcdir/modules/modperl/ZNC.cpp" -a -r "$srcdir/modules/modpython/_znc_core.cpp"; then
+		AC_MSG_NOTICE([modperl/modpython files are found, disabling SWIG])
+		USESWIG=no
+	fi
 	if test "x$USESWIG" = xno; then
-		if test -r "$srcdir/modules/modperl/modperl.tar.bz2" -a -r "$srcdir/modules/modpython/modpython.tar.bz2"; then
-			AC_MSG_NOTICE([modperl and modpython files are found, no SWIG needed])
+		if test ! -r "$srcdir/modules/modperl/ZNC.cpp" -o ! -r "$srcdir/modules/modpython/_znc_core.cpp"; then
+			AC_MSG_ERROR([Can not build modperl/modpython. Either install SWIG, or build ZNC from a tarball, or disable modperl/modpython. Check config.log for details.])
 		else
-			AC_MSG_ERROR([Can not build modperl/modpython. Either install SWIG, or build ZNC from a tarball, or disable modperl/modpython.])
+			AC_MSG_NOTICE([modperl/modpython files are found, no SWIG needed])
 		fi
+		USESWIG="not needed"
 		SWIG=""
 	else
 		USESWIG=yes
@@ -510,6 +546,7 @@ AC_SUBST([LDFLAGS])
 AC_SUBST([LIBS])
 AC_SUBST([LIBZNC])
 AC_SUBST([LIBZNCDIR])
+AC_SUBST([ISCYGWIN])
 AC_SUBST([MODLINK])
 AC_SUBST([NOSSL])
 AC_SUBST([TCL_FLAGS])

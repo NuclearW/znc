@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -219,7 +219,7 @@ public:
 
 	CString GetKey(Csock *pSock) {
 		CString sRes;
-		int res = pSock->GetPeerFingerprint(sRes);
+		long int res = pSock->GetPeerFingerprint(sRes);
 
 		DEBUG("GetKey() returned status " << res << " with key " << sRes);
 

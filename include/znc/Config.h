@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -108,6 +108,16 @@ public:
 		CString s;
 		if (FindStringEntry(sName, s)) {
 			uRes = s.ToUInt();
+			return true;
+		}
+		uRes = uDefault;
+		return false;
+	}
+
+	bool FindUShortEntry(const CString& sName, unsigned short& uRes, unsigned short uDefault = 0) {
+		CString s;
+		if (FindStringEntry(sName, s)) {
+			uRes = s.ToUShort();
 			return true;
 		}
 		uRes = uDefault;

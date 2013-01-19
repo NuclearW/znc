@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -10,9 +10,11 @@
 #include <znc/User.h>
 #include <znc/IRCNetwork.h>
 #include <list>
+#include <set>
 
 using std::list;
 using std::vector;
+using std::set;
 
 class CWatchSource {
 public:
@@ -171,7 +173,7 @@ public:
 		MCString msParams;
 		msParams["target"] = m_pNetwork->GetCurNick();
 
-		unsigned int uSize = m_Buffer.Size();
+		size_t uSize = m_Buffer.Size();
 		for (unsigned int uIdx = 0; uIdx < uSize; uIdx++) {
 			PutUser(m_Buffer.GetLine(uIdx, *GetClient(), msParams));
 		}
@@ -287,15 +289,19 @@ public:
 
 private:
 	void Process(const CNick& Nick, const CString& sMessage, const CString& sSource) {
+		set<CString> sHandledTargets;
+
 		for (list<CWatchEntry>::iterator it = m_lsWatchers.begin(); it != m_lsWatchers.end(); ++it) {
 			CWatchEntry& WatchEntry = *it;
 
-			if (WatchEntry.IsMatch(Nick, sMessage, sSource, m_pNetwork)) {
+			if (WatchEntry.IsMatch(Nick, sMessage, sSource, m_pNetwork) &&
+				sHandledTargets.count(WatchEntry.GetTarget()) < 1) {
 				if (m_pNetwork->IsUserAttached()) {
 					m_pNetwork->PutUser(":" + WatchEntry.GetTarget() + "!watch@znc.in PRIVMSG " + m_pNetwork->GetCurNick() + " :" + sMessage);
 				} else {
 					m_Buffer.AddLine(":" + _NAMEDFMT(WatchEntry.GetTarget()) + "!watch@znc.in PRIVMSG {target} :{text}", sMessage);
 				}
+				sHandledTargets.insert(WatchEntry.GetTarget());
 			}
 		}
 	}

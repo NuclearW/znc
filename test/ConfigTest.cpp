@@ -1,14 +1,14 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "ZNCDebug.h"
-#include "FileUtils.h"
-#include "Config.h"
+#include "znc/ZNCDebug.h"
+#include "znc/FileUtils.h"
+#include "znc/Config.h"
 #include <cstdlib>
 
 class CConfigTest {
@@ -113,7 +113,7 @@ public:
 
 		CConfig::SubConfigMapIterator it2 = conf.BeginSubConfigs();
 		while (it2 != conf.EndSubConfigs()) {
-			map<CString, CConfig::CConfigEntry>::const_iterator it3 = it2->second.begin();
+			std::map<CString, CConfigEntry>::const_iterator it3 = it2->second.begin();
 
 			while (it3 != it2->second.end()) {
 				sRes += "->" + it2->first + "/" + it3->first + "\n";

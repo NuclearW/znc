@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -86,8 +86,8 @@ public:
 };
 
 template<> void TModInfo<CCertMod>(CModInfo& Info) {
-	Info.AddType(CModInfo::NetworkModule);
+	Info.AddType(CModInfo::UserModule);
 	Info.SetWikiPage("cert");
 }
 
-USERMODULEDEFS(CCertMod, "Use a ssl certificate to connect to a server")
+NETWORKMODULEDEFS(CCertMod, "Use a ssl certificate to connect to a server")

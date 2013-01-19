@@ -131,6 +131,9 @@
 						<td>[<a href="addnetwork?user=<? VAR Username ESC=URL ?>">Add</a>]</td>
 				<? IF NetworkLoop ?>
 						<td>Name</td>
+						<td>Clients</td>
+						<td>Current Server</td>
+						<td>IRC Nick</td>
 					<? ELSE ?>
 						<td>&lt;- Add a network (opens in same page)</td>
 				<? ENDIF ?>
@@ -145,6 +148,9 @@
 							[<a href="editnetwork?user=<? VAR Username ESC=URL ?>&amp;network=<? VAR Name ESC=URL ?>">Edit</a>] [<a href="delnetwork?user=<? VAR Username ESC=URL ?>&amp;name=<? VAR Name ESC=URL ?>">Del</a>]
 						</td>
 						<td><? VAR Name ?></td>
+						<td><? VAR Clients ?></td>
+						<td><? VAR Server DEFAULT="-N/A-" ?></td>
+						<td><? VAR IRCNick ?></td>
 					</tr>
 			<? ENDLOOP ?>
 					</tbody>
@@ -239,10 +245,11 @@
 					<input type="text" name="timestampformat" value="<? VAR TimestampFormat ?>" class="full"
 						   title="The format for the timestamps used in buffers, for example [%H:%M:%S]." />
 				</div>
-				<div class="subsection">
+				<div class="subsection half">
 					<div class="inputlabel">Timezone:</div>
-					<input type="text" name="timezone" value="<? VAR Timezone ?>" class="half" list="timezone_list"
+					<input type="text" name="timezone" value="<? VAR Timezone ?>" list="timezone_list"
 						   title="Select your timezone." />
+					<br /><span class="info">E.g. <code>Europe/Berlin</code>, or <code>GMT-6</code></span>
 					<datalist id="timezone_list">
 						<? LOOP TZLoop ?>
 						<option value="<? VAR TZ ?>"/>
@@ -253,6 +260,11 @@
 					<div class="inputlabel">Join Tries:</div>
 					<input type="number" name="jointries" value="<? VAR JoinTries ?>" class="third" min="0"
 						   title="This defines how often ZNC tries to join, if the first join failed, e.g. due to channel mode +i/+k or if you're banned." />
+				</div>
+				<div class="subsection">
+					<div class="inputlabel">Max IRC Networks Number:</div>
+					<input type="number" name="maxnetworks" value="<? VAR MaxNetworks ?>" class="third" min="0"
+					       title="Maximum number of IRC networks allowed for this user." <? IF !ImAdmin ?>disabled="disabled"<? ENDIF ?> />
 				</div>
 				<div class="subsection half">
 					<div class="inputlabel">CTCP Replies:</div>

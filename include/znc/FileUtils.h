@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -100,11 +100,11 @@ public:
 	bool Sync();
 	bool Open(const CString& sFileName, int iFlags = O_RDONLY, mode_t iMode = 0644);
 	bool Open(int iFlags = O_RDONLY, mode_t iMode = 0644);
-	int Read(char *pszBuffer, int iBytes);
+	ssize_t Read(char *pszBuffer, int iBytes);
 	bool ReadLine(CString & sData, const CString & sDelimiter = "\n");
 	bool ReadFile(CString& sData, size_t iMaxSize = 512 * 1024);
-	int Write(const char *pszBuffer, u_int iBytes);
-	int Write(const CString & sData);
+	ssize_t Write(const char *pszBuffer, size_t iBytes);
+	ssize_t Write(const CString & sData);
 	void Close();
 	void ClearBuffer();
 
@@ -126,7 +126,7 @@ public:
 
 private:
 	// fcntl() locking wrapper
-	bool Lock(int iType, bool bBlocking);
+	bool Lock(short iType, bool bBlocking);
 
 	CString m_sBuffer;
 	int     m_iFD;
@@ -165,11 +165,11 @@ public:
 		clear();
 	}
 
-	int Fill(const CString& sDir) {
+	size_t Fill(const CString& sDir) {
 		return FillByWildcard(sDir, "*");
 	}
 
-	int FillByWildcard(const CString& sDir, const CString& sWildcard) {
+	size_t FillByWildcard(const CString& sDir, const CString& sWildcard) {
 		CleanUp();
 		DIR* dir = opendir((sDir.empty()) ? "." : sDir.c_str());
 

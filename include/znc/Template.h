@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -88,7 +88,7 @@ public:
 	const CString& GetName() const { return m_sName; }
 	unsigned long GetFilePosition() const { return m_uFilePosition; }
 	unsigned int GetRowIndex() const { return m_uRowIndex; }
-	unsigned int GetRowCount() { return m_pvRows->size(); }
+	size_t GetRowCount() { return m_pvRows->size(); }
 	std::vector<CTemplate*>* GetRows() { return m_pvRows; }
 	CTemplate* GetNextRow() { return GetRow(IncRowIndex()); }
 	CTemplate* GetCurRow() { return GetRow(m_uRowIndex); }

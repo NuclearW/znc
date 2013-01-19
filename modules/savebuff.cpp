@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -122,9 +122,9 @@ public:
 				{
 					CString sTimestamp = sLine.Token(0);
 					sTimestamp.TrimLeft("@");
-					timespec ts;
+					timeval ts;
 					ts.tv_sec = sTimestamp.Token(0, false, ",").ToLongLong();
-					ts.tv_nsec = sTimestamp.Token(1, false, ",").ToLong();
+					ts.tv_usec = sTimestamp.Token(1, false, ",").ToLong();
 
 					CString sFormat = sLine.Token(1, true);
 
@@ -168,12 +168,12 @@ public:
 
 				CString sFile = CRYPT_VERIFICATION_TOKEN;
 
-				unsigned int uSize = Buffer.Size();
+				size_t uSize = Buffer.Size();
 				for (unsigned int uIdx = 0; uIdx < uSize; uIdx++) {
 					const CBufLine& Line = Buffer.GetBufLine(uIdx);
-					timespec ts = Line.GetTime();
+					timeval ts = Line.GetTime();
 					sFile +=
-						"@" + CString(ts.tv_sec) + "," + CString(ts.tv_nsec) + " " +
+						"@" + CString(ts.tv_sec) + "," + CString(ts.tv_usec) + " " +
 						Line.GetFormat() + "\n" +
 						Line.GetText() + "\n";
 				}
@@ -285,7 +285,7 @@ public:
 	}
 	virtual void OnQuit(const CNick& cNick, const CString& sMessage, const vector<CChan*>& vChans)
 	{
-		for (u_int a = 0; a < vChans.size(); a++)
+		for (size_t a = 0; a < vChans.size(); a++)
 		{
 			AddBuffer(*vChans[a], SpoofChanMsg(vChans[a]->GetName(), cNick.GetNickMask() + " QUIT " + sMessage));
 		}
@@ -295,7 +295,7 @@ public:
 
 	virtual void OnNick(const CNick& cNick, const CString& sNewNick, const vector<CChan*>& vChans)
 	{
-		for (u_int a = 0; a < vChans.size(); a++)
+		for (size_t a = 0; a < vChans.size(); a++)
 		{
 			AddBuffer(*vChans[a], SpoofChanMsg(vChans[a]->GetName(), cNick.GetNickMask() + " NICK " + sNewNick));
 		}

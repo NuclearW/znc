@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -48,6 +48,7 @@ using std::allocator;
 %include <stl.i>
 %include <std_list.i>
 %include <std_set.i>
+%include <std_deque.i>
 
 %include "modpython/cstring.i"
 %template(_stringlist) std::list<CString>;
@@ -67,9 +68,15 @@ using std::allocator;
 %template(SModInfo) std::set<CModInfo>;
 %template(SCString) std::set<CString>;
 typedef std::set<CString> SCString;
+%template(VCString) std::vector<CString>;
+typedef std::vector<CString> VCString;
 %template(PyMCString) std::map<CString, CString>;
+%template(PyMStringVString) std::map<CString, VCString>;
 class MCString : public std::map<CString, CString> {};
 %template(PyModulesVector) std::vector<CModule*>;
+%template(VListeners) std::vector<CListener*>;
+%template(BufLines) std::deque<CBufLine>;
+%template(VVString) std::vector<VCString>;
 
 %typemap(in) CString& {
 	String* p;
@@ -107,6 +114,7 @@ class MCString : public std::map<CString, CString> {};
 %include "../include/znc/defines.h"
 %include "../include/znc/Utils.h"
 %template(PAuthBase) CSmartPtr<CAuthBase>;
+%template(WebSession) CSmartPtr<CWebSession>;
 %include "../include/znc/Config.h"
 %include "../include/znc/Csocket.h"
 %template(ZNCSocketManager) TSocketManager<CZNCSock>;
@@ -160,6 +168,25 @@ class CPyRetBool {
 	bool __bool__() {
 		return $self->b;
 	}
+}
+
+%extend Csock {
+    PyObject* WriteBytes(PyObject* data) {
+        if (!PyBytes_Check(data)) {
+            PyErr_SetString(PyExc_TypeError, "socket.WriteBytes needs bytes as argument");
+            return NULL;
+        }
+        char* buffer;
+        Py_ssize_t length;
+        if (-1 == PyBytes_AsStringAndSize(data, &buffer, &length)) {
+            return NULL;
+        }
+        if ($self->Write(buffer, length)) {
+            Py_RETURN_TRUE;
+        } else {
+            Py_RETURN_FALSE;
+        }
+    }
 }
 
 %extend CModule {

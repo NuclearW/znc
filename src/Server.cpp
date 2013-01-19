@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -10,7 +10,7 @@
 
 CServer::CServer(const CString& sName, unsigned short uPort, const CString& sPass, bool bSSL) {
 	m_sName = sName;
-	m_uPort = (uPort) ? uPort : 6667;
+	m_uPort = (uPort) ? uPort : (unsigned short)6667;
 	m_sPass = sPass;
 	m_bSSL = bSSL;
 }

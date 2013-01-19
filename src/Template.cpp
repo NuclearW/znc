@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -31,7 +31,7 @@ void CTemplateOptions::Parse(const CString& sLine) {
 }
 
 CTemplate* CTemplateLoopContext::GetRow(unsigned int uIndex) {
-	unsigned int uSize = m_pvRows->size();
+	size_t uSize = m_pvRows->size();
 
 	if (uIndex < uSize) {
 		if (m_bReverse) {
@@ -304,7 +304,7 @@ bool CTemplate::Print(const CString& sFileName, ostream& oOut) {
 		uLineNum++;
 		CString::size_type iPos = 0;
 		uCurPos = uFilePos;
-		unsigned int uLineSize = sLine.size();
+		CString::size_type uLineSize = sLine.size();
 		bool bBroke = false;
 
 		while (1) {

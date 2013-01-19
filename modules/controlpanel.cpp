@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  * Copyright (C) 2008 by Stefan Rado
  * based on admin.cpp by Sebastian Ramacher
  * based on admin.cpp in crox branch
@@ -438,7 +438,7 @@ class CAdminMod : public CModule {
 			pNetwork->SetFloodRate(sValue.ToDouble());
 			PutModule("FloodRate = " + CString(pNetwork->GetFloodRate()));
 		} else if (sVar.Equals("floodburst")) {
-			pNetwork->SetFloodBurst(sValue.ToUInt());
+			pNetwork->SetFloodBurst(sValue.ToUShort());
 			PutModule("FloodBurst = " + CString(pNetwork->GetFloodBurst()));
 		} else {
 			PutModule("Error: Unknown variable");
@@ -698,13 +698,6 @@ class CAdminMod : public CModule {
 	}
 
 	void AddNetwork(const CString& sLine) {
-#ifndef ENABLE_ADD_NETWORK
-		if (!m_pUser->IsAdmin()) {
-			PutModule("Permission denied");
-			return;
-		}
-#endif
-
 		CString sUser = sLine.Token(1);
 		CString sNetwork = sLine.Token(2);
 		CUser *pUser = m_pUser;
@@ -714,12 +707,18 @@ class CAdminMod : public CModule {
 		} else {
 			pUser = GetUser(sUser);
 			if (!pUser) {
+				PutModule("User not found");
 				return;
 			}
 		}
 
 		if (sNetwork.empty()) {
 			PutModule("Usage: " + sLine.Token(0) + " [user] network");
+			return;
+		}
+
+		if (!m_pUser->IsAdmin() && !pUser->HasSpaceForNewNetwork()) {
+			PutStatus("Network number limit reached. Ask an admin to increase the limit for you, or delete few old ones using /znc DelNetwork <name>");
 			return;
 		}
 
@@ -754,8 +753,15 @@ class CAdminMod : public CModule {
 			return;
 		}
 
-		if (!(pUser->FindNetwork(sNetwork))) {
+		CIRCNetwork* pNetwork = pUser->FindNetwork(sNetwork);
+
+		if (!pNetwork) {
 			PutModule(pUser->GetUserName() + " does not have a network named [" + sNetwork + "]");
+			return;
+		}
+
+		if (pNetwork == m_pNetwork) {
+			PutModule("Currently active network can be deleted via *status");
 			return;
 		}
 
@@ -1127,7 +1133,7 @@ public:
 };
 
 template<> void TModInfo<CAdminMod>(CModInfo& Info) {
-	Info.SetWikiPage("admin");
+	Info.SetWikiPage("controlpanel");
 }
 
-USERMODULEDEFS(CAdminMod, "Dynamic configuration of users/settings through IRC. Allows editing only yourself if you're not ZNC admin.")
+USERMODULEDEFS(CAdminMod, "Dynamic configuration through IRC. Allows editing only yourself if you're not ZNC admin.")

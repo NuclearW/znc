@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -55,6 +55,15 @@ protected:
 				}
 			}
 		}
+
+		vector<CClient*>& vUserClients = m_pUser->GetUserClients();
+		for (size_t c = 0; c < vUserClients.size(); ++c) {
+			CClient* pUserClient = vUserClients[c];
+
+			if (pUserClient->GetTimeSinceLastDataTransaction() >= 270) {
+				pUserClient->PutClient("PING :ZNC");
+			}
+		}
 	}
 
 	CUser* m_pUser;
@@ -86,6 +95,7 @@ CUser::CUser(const CString& sUserName)
 	m_sTimestampFormat = "[%H:%M:%S]";
 	m_bAppendTimestamp = false;
 	m_bPrependTimestamp = true;
+	m_uMaxNetworks = 1;
 	m_pUserTimer = new CUserTimer(this);
 	CZNC::Get().GetManager().AddCron(m_pUserTimer);
 }
@@ -137,6 +147,7 @@ bool CUser::ParseConfig(CConfig* pConfig, CString& sError) {
 	size_t numStringOptions = sizeof(StringOptions) / sizeof(StringOptions[0]);
 	TOption<unsigned int> UIntOptions[] = {
 		{ "jointries", &CUser::SetJoinTries },
+		{ "maxnetworks", &CUser::SetMaxNetworks },
 	};
 	size_t numUIntOptions = sizeof(UIntOptions) / sizeof(UIntOptions[0]);
 	TOption<bool> BoolOptions[] = {
@@ -328,6 +339,8 @@ bool CUser::ParseConfig(CConfig* pConfig, CString& sError) {
 	for (subIt = subConf.begin(); subIt != subConf.end(); ++subIt) {
 		const CString& sNetworkName = subIt->first;
 
+		CUtils::PrintMessage("Loading network [" + sNetworkName + "]");
+
 		CIRCNetwork *pNetwork = FindNetwork(sNetworkName);
 
 		if (!pNetwork) {
@@ -371,7 +384,20 @@ bool CUser::ParseConfig(CConfig* pConfig, CString& sError) {
 			continue;
 		}
 
-		CUtils::PrintAction("Loading Module [" + sModName + "]");
+		// XXX Legacy crap, added in ZNC 0.207
+		if (sModName == "admin") {
+			CUtils::PrintMessage("NOTICE: [admin] module was renamed, loading [controlpanel] instead");
+			sModName = "controlpanel";
+		}
+		
+		// XXX Legacy crap, should have been added ZNC 0.207, but added only in 1.1 :(
+		if (sModName == "away") {
+			CUtils::PrintMessage("NOTICE: [away] was renamed, "
+					"loading [awaystore] instead");
+			sModName = "awaystore";
+		}
+
+		CUtils::PrintAction("Loading user module [" + sModName + "]");
 		CString sModRet;
 		CString sArgs = sValue.Token(1, true);
 		bool bModRet = true;
@@ -539,10 +565,10 @@ CString CUser::AddTimestamp(time_t tm, const CString& sStr) const {
 			// \x1F underline
 			// Also see http://www.visualirc.net/tech-attrs.php
 			if (CString::npos != sRet.find_first_of("\x02\x03\x04\x0F\x12\x16\x1D\x1F")) {
-				sRet += "\x0F ";
+				sRet += "\x0F";
 			}
 
-			sRet += sTimestamp;
+			sRet += " " + sTimestamp;
 		}
 	}
 
@@ -645,6 +671,7 @@ bool CUser::Clone(const CUser& User, CString& sErrorRet, bool bCloneNetworks) {
 	SetDefaultChanModes(User.GetDefaultChanModes());
 	SetBufferCount(User.GetBufferCount(), true);
 	SetJoinTries(User.JoinTries());
+	SetMaxNetworks(User.MaxNetworks());
 
 	// Allowed Hosts
 	m_ssAllowedHosts.clear();
@@ -839,6 +866,7 @@ CConfig CUser::ToConfig() {
 	config.AddKeyValuePair("PrependTimestamp", CString(GetTimestampPrepend()));
 	config.AddKeyValuePair("Timezone", m_sTimezone);
 	config.AddKeyValuePair("JoinTries", CString(m_uMaxJoinTries));
+	config.AddKeyValuePair("MaxNetworks", CString(m_uMaxNetworks));
 
 	// Allow Hosts
 	if (!m_ssAllowedHosts.empty()) {
@@ -1118,7 +1146,7 @@ bool CUser::DenySetBindHost() const { return m_bDenySetBindHost; }
 bool CUser::MultiClients() const { return m_bMultiClients; }
 const CString& CUser::GetStatusPrefix() const { return m_sStatusPrefix; }
 const CString& CUser::GetDefaultChanModes() const { return m_sDefaultChanModes; }
-
+bool CUser::HasSpaceForNewNetwork() const { return GetNetworks().size() < MaxNetworks(); }
 
 CString CUser::GetQuitMsg() const { return (!m_sQuitMsg.Trim_n().empty()) ? m_sQuitMsg : CZNC::GetTag(false); }
 const MCString& CUser::GetCTCPReplies() const { return m_mssCTCPReplies; }

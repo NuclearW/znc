@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -486,7 +486,7 @@ void CAwayJob::RunJob()
 template<> void TModInfo<CAway>(CModInfo& Info) {
 	Info.SetWikiPage("awaystore");
 	Info.SetHasArgs(true);
-	Info.SetArgsHelpText("[ -notimer | -timer N ] [ passw0rd ]. N is number of seconds, 600 by default.");
+	Info.SetArgsHelpText("[ -notimer | -timer N ]  passw0rd . N is number of seconds, 600 by default.");
 }
 
 NETWORKMODULEDEFS(CAway, "Adds auto-away with logging, useful when you use ZNC from different locations");

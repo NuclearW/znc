@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -332,15 +332,17 @@ void CChan::ModeChange(const CString& sModes, const CNick* pOpNick) {
 					break;
 			}
 
-			bool bNoChange;
-			if (bList) {
-				bNoChange = false;
-			} else if (bAdd) {
-				bNoChange = HasMode(uMode) && GetModeArg(uMode) == sArg;
-			} else {
-				bNoChange = !HasMode(uMode);
+			if (pOpNick) {
+				bool bNoChange;
+				if (bList) {
+					bNoChange = false;
+				} else if (bAdd) {
+					bNoChange = HasMode(uMode) && GetModeArg(uMode) == sArg;
+				} else {
+					bNoChange = !HasMode(uMode);
+				}
+				NETWORKMODULECALL(OnMode(*pOpNick, *this, uMode, sArg, bAdd, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
 			}
-			NETWORKMODULECALL(OnMode(*pOpNick, *this, uMode, sArg, bAdd, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
 
 			if (!bList) {
 				(bAdd) ? AddMode(uMode, sArg) : RemMode(uMode);
@@ -545,21 +547,23 @@ void CChan::SendBuffer(CClient* pClient) {
 				CClient * pUseClient = (pClient ? pClient : vClients[uClient]);
 
 				bool bSkipStatusMsg = pUseClient->HasServerTime();
-				NETWORKMODULECALL(OnChanBufferStarting(*this, *pUseClient), m_pNetwork->GetUser(), m_pNetwork, NULL, bSkipStatusMsg = true);
+				NETWORKMODULECALL(OnChanBufferStarting(*this, *pUseClient), m_pNetwork->GetUser(), m_pNetwork, NULL, &bSkipStatusMsg);
 
 				if (!bSkipStatusMsg) {
 					m_pNetwork->PutUser(":***!znc@znc.in PRIVMSG " + GetName() + " :Buffer Playback...", pUseClient);
 				}
 
-				unsigned int uSize = m_Buffer.Size();
-				for (unsigned int uIdx = 0; uIdx < uSize; uIdx++) {
+				size_t uSize = m_Buffer.Size();
+				for (size_t uIdx = 0; uIdx < uSize; uIdx++) {
 					CString sLine = m_Buffer.GetLine(uIdx, *pUseClient);
-					NETWORKMODULECALL(OnChanBufferPlayLine(*this, *pUseClient, sLine), m_pNetwork->GetUser(), m_pNetwork, NULL, continue);
+					bool bNotShowThisLine = false;
+					NETWORKMODULECALL(OnChanBufferPlayLine(*this, *pUseClient, sLine), m_pNetwork->GetUser(), m_pNetwork, NULL, &bNotShowThisLine);
+					if (bNotShowThisLine) continue;
 					m_pNetwork->PutUser(sLine, pUseClient);
 				}
 
 				bSkipStatusMsg = pUseClient->HasServerTime();
-				NETWORKMODULECALL(OnChanBufferEnding(*this, *pUseClient), m_pNetwork->GetUser(), m_pNetwork, NULL, bSkipStatusMsg = true);
+				NETWORKMODULECALL(OnChanBufferEnding(*this, *pUseClient), m_pNetwork->GetUser(), m_pNetwork, NULL, &bSkipStatusMsg);
 				if (!bSkipStatusMsg) {
 					m_pNetwork->PutUser(":***!znc@znc.in PRIVMSG " + GetName() + " :Playback Complete.", pUseClient);
 				}

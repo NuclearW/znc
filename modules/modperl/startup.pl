@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2004-2012  See the AUTHORS file for details.
+# Copyright (C) 2004-2013  See the AUTHORS file for details.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License version 2 as published
@@ -144,15 +144,7 @@ sub GetModInfo {
 	ZNC::CModules::FindModPath("$modname.pm", $modpath, $datapath) or return ($ZNC::Perl_NotFound, "Unable to find module [$modname]");
 	$modpath = $modpath->GetPerlStr;
 	return ($ZNC::Perl_LoadError, "Incorrect perl module.") unless IsModule $modpath, $modname;
-	require $modpath;
-	my $pmod = bless {}, $modname;
-	my @types = $pmod->module_types;
-	$modinfo->SetDefaultType($types[0]);
-	$modinfo->SetDescription($pmod->description);
-	$modinfo->SetWikiPage($pmod->wiki_page);
-	$modinfo->SetName($modname);
-	$modinfo->SetPath($modpath);
-	$modinfo->AddType($_) for @types;
+	ModInfoByPath($modpath, $modname, $modinfo);
 	return ($ZNC::Perl_Loaded)
 }
 
@@ -165,6 +157,8 @@ sub ModInfoByPath {
 	$modinfo->SetDefaultType($types[0]);
 	$modinfo->SetDescription($pmod->description);
 	$modinfo->SetWikiPage($pmod->wiki_page);
+	$modinfo->SetArgsHelpText($pmod->args_help_text);
+	$modinfo->SetHasArgs($pmod->has_args);
 	$modinfo->SetName($modname);
 	$modinfo->SetPath($modpath);
 	$modinfo->AddType($_) for @types;
@@ -290,6 +284,11 @@ sub wiki_page {
 sub module_types {
 	$ZNC::CModInfo::NetworkModule
 }
+
+sub args_help_text { '' }
+
+sub has_args { 0 }
+
 
 # Default implementations for module hooks. They can be overriden in derived modules.
 sub OnLoad {1}

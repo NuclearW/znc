@@ -1,13 +1,13 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
  * by the Free Software Foundation.
  */
 
-#include "ZNCString.h"
-#include "ZNCDebug.h"
+#include "znc/ZNCString.h"
+#include "znc/ZNCDebug.h"
 
 static int testEqual(const CString& a, const CString& b, const CString& what)
 {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -24,6 +24,15 @@ public:
 
 	void ClearCommand(const CString& sLine) {
 		DelNV("Password");
+	}
+
+	void SetNSNameCommand(const CString& sLine) {
+		SetNV("NickServName", sLine.Token(1, true));
+		PutModule("NickServ name set");
+	}
+
+	void ClearNSNameCommand(const CString& sLine) {
+		DelNV("NickServName");
 	}
 
 	void GhostCommand(const CString& sLine) {
@@ -92,6 +101,10 @@ public:
 			"password");
 		AddCommand("Clear", static_cast<CModCommand::ModCmdFunc>(&CNickServ::ClearCommand),
 			"", "Clear your nickserv password");
+		AddCommand("SetNSName", static_cast<CModCommand::ModCmdFunc>(&CNickServ::SetNSNameCommand),
+			"nickname", "Set NickServ name (Useful on networks like EpiKnet, where NickServ is named Themis)");
+		AddCommand("ClearNSName", static_cast<CModCommand::ModCmdFunc>(&CNickServ::ClearNSNameCommand),
+			"", "Reset NickServ name to default (NickServ)");
 		AddCommand("Ghost", static_cast<CModCommand::ModCmdFunc>(&CNickServ::GhostCommand),
 			"nickname", "GHOST disconnects an old user session, or somebody attempting to use your nickname without authorization.");
 		AddCommand("Recover", static_cast<CModCommand::ModCmdFunc>(&CNickServ::RecoverCommand),
@@ -134,8 +147,9 @@ public:
 	}
 
 	void HandleMessage(CNick& Nick, const CString& sMessage) {
+		CString sNickServName = (!GetNV("NickServName").empty()) ? GetNV("NickServName") : "NickServ";
 		if (!GetNV("Password").empty()
-				&& Nick.GetNick().Equals("NickServ")
+				&& Nick.GetNick().Equals(sNickServName)
 				&& (sMessage.find("msg") != CString::npos
 				 || sMessage.find("authenticate") != CString::npos
 				 || sMessage.find("choose a different nickname") != CString::npos

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -11,7 +11,7 @@
 
 #include <znc/zncconfig.h>
 #include <znc/ZNCString.h>
-#include <time.h>
+#include <sys/time.h>
 #include <deque>
 
 // Forward Declarations
@@ -20,7 +20,8 @@ class CClient;
 
 class CBufLine {
 public:
-	CBufLine(const CString& sFormat, const CString& sText = "", const timespec* ts = 0);
+	CBufLine() { throw 0; } // shouldn't be called, but is needed for compilation
+	CBufLine(const CString& sFormat, const CString& sText = "", const timeval* ts = 0);
 	~CBufLine();
 	CString GetLine(const CClient& Client, const MCString& msParams) const;
 	void UpdateTime();
@@ -28,20 +29,20 @@ public:
 	// Setters
 	void SetFormat(const CString& sFormat) { m_sFormat = sFormat; }
 	void SetText(const CString& sText) { m_sText = sText; }
-	void SetTime(const timespec& ts) { m_time = ts; }
+	void SetTime(const timeval& ts) { m_time = ts; }
 	// !Setters
 
 	// Getters
 	const CString& GetFormat() const { return m_sFormat; }
 	const CString& GetText() const { return m_sText; }
-	timespec GetTime() const { return m_time; }
+	timeval GetTime() const { return m_time; }
 	// !Getters
 
 private:
 protected:
 	CString  m_sFormat;
 	CString  m_sText;
-	timespec m_time;
+	timeval  m_time;
 };
 
 class CBuffer : private std::deque<CBufLine> {
@@ -49,15 +50,15 @@ public:
 	CBuffer(unsigned int uLineCount = 100);
 	~CBuffer();
 
-	int AddLine(const CString& sFormat, const CString& sText = "", const timespec* ts = 0);
+	size_type AddLine(const CString& sFormat, const CString& sText = "", const timeval* ts = 0);
 	/// Same as AddLine, but replaces a line whose format string starts with sMatch if there is one.
-	int UpdateLine(const CString& sMatch, const CString& sFormat, const CString& sText = "");
+	size_type UpdateLine(const CString& sMatch, const CString& sFormat, const CString& sText = "");
 	/// Same as UpdateLine, but does nothing if this exact line already exists.
 	/// We need this because "/version" sends us the 005 raws again
-	int UpdateExactLine(const CString& sFormat, const CString& sText = "");
+	size_type UpdateExactLine(const CString& sFormat, const CString& sText = "");
 	const CBufLine& GetBufLine(unsigned int uIdx) const;
-	CString GetLine(unsigned int uIdx, const CClient& Client, const MCString& msParams = MCString::EmptyMap) const;
-	unsigned int Size() const { return size(); }
+	CString GetLine(size_type uIdx, const CClient& Client, const MCString& msParams = MCString::EmptyMap) const;
+	size_type Size() const { return size(); }
 	bool IsEmpty() const { return empty(); }
 	void Clear() { clear(); }
 

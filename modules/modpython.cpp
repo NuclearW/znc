@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -81,8 +81,13 @@ public:
 
 	bool OnLoad(const CString& sArgsi, CString& sMessage) {
 		CString sModPath, sTmp;
-		if (!CModules::FindModPath("modpython/_znc_core.so", sModPath, sTmp)) {
-			sMessage = "modpython/_znc_core.so not found.";
+#ifdef __CYGWIN__
+		CString sDllPath = "modpython/_znc_core.dll";
+#else
+		CString sDllPath = "modpython/_znc_core.so";
+#endif
+		if (!CModules::FindModPath(sDllPath, sModPath, sTmp)) {
+			sMessage = sDllPath + " not found.";
 			return false;
 		}
 		sTmp = CDir::ChangeDir(sModPath, "..");
@@ -328,14 +333,23 @@ public:
 	}
 
 	virtual ~CModPython() {
+		if (!m_PyZNCModule) {
+			DEBUG("~CModPython(): seems like CModPython::OnLoad() didn't initialize python");
+			return;
+		}
 		PyObject* pyFunc = PyObject_GetAttrString(m_PyZNCModule, "unload_all");
-        PyObject* pyRes = PyObject_CallFunctionObjArgs(pyFunc, NULL);
-        if (!pyRes) {
-            CString sRetMsg = GetPyExceptionStr();
-            DEBUG("modpython tried to unload all modules in its destructor, but: " << sRetMsg);
-        }
-        Py_CLEAR(pyRes);
-        Py_CLEAR(pyFunc);
+		if (!pyFunc) {
+			CString sRetMsg = GetPyExceptionStr();
+			DEBUG("~CModPython(): couldn't find unload_all: " << sRetMsg);
+			return;
+		}
+		PyObject* pyRes = PyObject_CallFunctionObjArgs(pyFunc, NULL);
+		if (!pyRes) {
+			CString sRetMsg = GetPyExceptionStr();
+			DEBUG("modpython tried to unload all modules in its destructor, but: " << sRetMsg);
+		}
+		Py_CLEAR(pyRes);
+		Py_CLEAR(pyFunc);
 
 		Py_CLEAR(m_PyFormatException);
 		Py_CLEAR(m_PyZNCModule);
@@ -440,23 +454,6 @@ CPySocket::~CPySocket() {
 	}
 	Py_CLEAR(pyRes);
 	Py_CLEAR(m_pyObj);
-}
-
-PyObject* CPySocket::WriteBytes(PyObject* data) {
-	if (!PyBytes_Check(data)) {
-		PyErr_SetString(PyExc_TypeError, "socket.WriteBytes needs bytes as argument");
-		return NULL;
-	}
-	char* buffer;
-	Py_ssize_t length;
-	if (-1 == PyBytes_AsStringAndSize(data, &buffer, &length)) {
-		return NULL;
-	}
-	if (Write(buffer, length)) {
-		Py_RETURN_TRUE;
-	} else {
-		Py_RETURN_FALSE;
-	}
 }
 
 template<> void TModInfo<CModPython>(CModInfo& Info) {

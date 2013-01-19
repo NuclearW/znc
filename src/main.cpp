@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -102,13 +102,13 @@ static void seedPRNG() {
 	// Try to find a seed which can't be as easily guessed as only time()
 
 	if (gettimeofday(&tv, NULL) == 0) {
-		seed  = tv.tv_sec;
+		seed = (unsigned int)tv.tv_sec;
 
 		// This is in [0:1e6], which means that roughly 20 bits are
 		// actually used, let's try to shuffle the high bits.
-		seed ^= (tv.tv_usec << 10) | tv.tv_usec;
+		seed ^= uint32_t((tv.tv_usec << 10) | tv.tv_usec);
 	} else
-		seed = time(NULL);
+		seed = (unsigned int)time(NULL);
 
 	seed ^= rand();
 	seed ^= getpid();

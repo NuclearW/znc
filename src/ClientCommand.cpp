@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -29,7 +29,9 @@ void CClient::UserCommand(CString& sLine) {
 		return;
 	}
 
-	NETWORKMODULECALL(OnStatusCommand(sLine), m_pUser, m_pNetwork, this, return);
+	bool bReturn = false;
+	NETWORKMODULECALL(OnStatusCommand(sLine), m_pUser, m_pNetwork, this, &bReturn);
+	if (bReturn) return;
 
 	const CString sCommand = sLine.Token(0);
 
@@ -104,7 +106,7 @@ void CClient::UserCommand(CString& sLine) {
 			return;
 		}
 
-		CString sChan = sLine.Token(1);
+		CString sChan = sLine.Token(1).MakeLower();
 
 		if (sChan.empty()) {
 			PutStatus("Usage: Detach <#chan>");
@@ -115,7 +117,10 @@ void CClient::UserCommand(CString& sLine) {
 		vector<CChan*>::const_iterator it;
 		unsigned int uMatches = 0, uDetached = 0;
 		for (it = vChans.begin(); it != vChans.end(); ++it) {
-			if (!(*it)->GetName().WildCmp(sChan))
+			CChan *pChannel = *it;
+			CString channelName = pChannel->GetName().AsLower();
+
+			if (!channelName.WildCmp(sChan))
 				continue;
 			uMatches++;
 
@@ -198,6 +203,47 @@ void CClient::UserCommand(CString& sLine) {
 			Table.SetCell("Username", it->first);
 			Table.SetCell("Networks", CString(it->second->GetNetworks().size()));
 			Table.SetCell("Clients", CString(it->second->GetAllClients().size()));
+		}
+
+		PutStatus(Table);
+	} else if (m_pUser->IsAdmin() && sCommand.Equals("LISTALLUSERNETWORKS")) {
+		const map<CString, CUser*>& msUsers = CZNC::Get().GetUserMap();
+		CTable Table;
+		Table.AddColumn("Username");
+		Table.AddColumn("Network");
+		Table.AddColumn("Clients");
+		Table.AddColumn("OnIRC");
+		Table.AddColumn("IRC Server");
+		Table.AddColumn("IRC User");
+		Table.AddColumn("Channels");
+
+		for (map<CString, CUser*>::const_iterator it = msUsers.begin(); it != msUsers.end(); ++it) {
+			Table.AddRow();
+			Table.SetCell("Username", it->first);
+			Table.SetCell("Network", "N/A");
+			Table.SetCell("Clients", CString(it->second->GetUserClients().size()));
+
+			const vector<CIRCNetwork*>& vNetworks = it->second->GetNetworks();
+
+			for (size_t a = 0; a < vNetworks.size(); ++a) {
+				CIRCNetwork* pNetwork = vNetworks[a];
+				Table.AddRow();
+				if (a == vNetworks.size() - 1) {
+					Table.SetCell("Username", "`-");
+				} else {
+					Table.SetCell("Username", "|-");
+				}
+				Table.SetCell("Network", pNetwork->GetName());
+				Table.SetCell("Clients", CString(pNetwork->GetClients().size()));
+				if (pNetwork->IsIRCConnected()) {
+					Table.SetCell("OnIRC", "Yes");
+					Table.SetCell("IRC Server", pNetwork->GetIRCServer());
+					Table.SetCell("IRC User", pNetwork->GetIRCNick().GetNickMask());
+					Table.SetCell("Channels", CString(pNetwork->GetChans().size()));
+				} else {
+					Table.SetCell("OnIRC", "No");
+				}
+			}
 		}
 
 		PutStatus(Table);
@@ -415,12 +461,10 @@ void CClient::UserCommand(CString& sLine) {
 		PutStatus("Total: " + CString(vChans.size()) + " - Joined: " + CString(uNumJoined) +
 			" - Detached: " + CString(uNumDetached) + " - Disabled: " + CString(uNumDisabled));
 	} else if (sCommand.Equals("ADDNETWORK")) {
-#ifndef ENABLE_ADD_NETWORK
-		if (!m_pUser->IsAdmin()) {
-			PutStatus("Permission denied");
+		if (!m_pUser->IsAdmin() && !m_pUser->HasSpaceForNewNetwork()) {
+			PutStatus("Network number limit reached. Ask an admin to increase the limit for you, or delete few old ones using /znc DelNetwork <name>");
 			return;
 		}
-#endif
 
 		CString sNetwork = sLine.Token(1);
 
@@ -474,7 +518,7 @@ void CClient::UserCommand(CString& sLine) {
 		Table.AddColumn("IRC User");
 		Table.AddColumn("Channels");
 
-		for (unsigned int a = 0; a < vNetworks.size(); a++) {
+		for (size_t a = 0; a < vNetworks.size(); a++) {
 			CIRCNetwork* pNetwork = vNetworks[a];
 			Table.AddRow();
 			Table.SetCell("Network", pNetwork->GetName());
@@ -490,6 +534,94 @@ void CClient::UserCommand(CString& sLine) {
 
 		if (PutStatus(Table) == 0) {
 			PutStatus("No networks");
+		}
+	} else if (sCommand.Equals("MOVENETWORK")) {
+		if (!m_pUser->IsAdmin()) {
+			PutStatus("Access Denied.");
+			return;
+		}
+
+		CString sOldUser = sLine.Token(1);
+		CString sOldNetwork = sLine.Token(2);
+		CString sNewUser = sLine.Token(3);
+		CString sNewNetwork = sLine.Token(4);
+
+		if (sOldUser.empty() || sOldNetwork.empty() || sNewUser.empty()) {
+			PutStatus("Usage: MoveNetwork old-user old-network new-user [new-network]");
+			return;
+		}
+		if (sNewNetwork.empty()) {
+			sNewNetwork = sOldNetwork;
+		}
+
+		CUser* pOldUser = CZNC::Get().FindUser(sOldUser);
+		if (!pOldUser) {
+			PutStatus("Old user [" + sOldUser + "] not found.");
+			return;
+		}
+
+		CIRCNetwork* pOldNetwork = pOldUser->FindNetwork(sOldNetwork);
+		if (!pOldNetwork) {
+			PutStatus("Old network [" + sOldNetwork + "] not found.");
+			return;
+		}
+
+		CUser* pNewUser = CZNC::Get().FindUser(sNewUser);
+		if (!pNewUser) {
+			PutStatus("New user [" + sOldUser + "] not found.");
+			return;
+		}
+
+		if (pNewUser->FindNetwork(sNewNetwork)) {
+			PutStatus("User [" + sNewUser + "] already has network [" + sNewNetwork + "].");
+			return;
+		}
+
+		if (!CIRCNetwork::IsValidNetwork(sNewNetwork)) {
+			PutStatus("Invalid network name [" + sNewNetwork + "]");
+			return;
+		}
+
+		const CModules& vMods = pOldNetwork->GetModules();
+		for (CModules::const_iterator i = vMods.begin(); i != vMods.end(); ++i) {
+			CString sOldModPath = pOldNetwork->GetNetworkPath() + "/moddata/" + (*i)->GetModName();
+			CString sNewModPath = pNewUser->GetUserPath() + "/networks/" + sNewNetwork + "/moddata/" + (*i)->GetModName();
+
+			CDir oldDir(sOldModPath);
+			for (CDir::iterator it = oldDir.begin(); it != oldDir.end(); ++it) {
+				if ((*it)->GetShortName() != ".registry") {
+					PutStatus("Some files seem to be in [" + sOldModPath + "]. You might want to move them to [" + sNewModPath + "]");
+					break;
+				}
+			}
+
+			CFile fOldNVFile = CFile(sOldModPath + "/.registry");
+			if (!fOldNVFile.Exists()) {
+				continue;
+			}
+			if (!CFile::Exists(sNewModPath)) {
+				CDir::MakeDir(sNewModPath);
+			}
+			fOldNVFile.Copy(sNewModPath + "/.registry");
+		}
+
+		CIRCNetwork* pNewNetwork = pNewUser->AddNetwork(sNewNetwork);
+
+		if (!pNewNetwork) {
+			PutStatus("Error adding network.");
+			return;
+		}
+
+		pNewNetwork->Clone(*pOldNetwork, false);
+
+		if (m_pNetwork && m_pNetwork->GetName().Equals(sOldNetwork) && m_pUser == pOldUser) {
+			SetNetwork(NULL);
+		}
+
+		if (pOldUser->DeleteNetwork(sOldNetwork)) {
+			PutStatus("Success.");
+		} else {
+			PutStatus("Copied the network to new user, but failed to delete old network");
 		}
 	} else if (sCommand.Equals("JUMPNETWORK")) {
 		CString sNetwork = sLine.Token(1);
@@ -1402,6 +1534,13 @@ void CClient::HelpUser() {
 	Table.SetCell("Command", "ListNetworks");
 	Table.SetCell("Description", "List all networks");
 
+	if (m_pUser->IsAdmin()) {
+		Table.AddRow();
+		Table.SetCell("Command", "MoveNetwork");
+		Table.SetCell("Arguments", "old-user old-net new-user [new-net]");
+		Table.SetCell("Description", "Move an IRC network from one user to another");
+	}
+
 	Table.AddRow();
 	Table.SetCell("Command", "JumpNetwork");
 	Table.SetCell("Arguments", "<network>");
@@ -1575,6 +1714,10 @@ void CClient::HelpUser() {
 		Table.AddRow();
 		Table.SetCell("Command", "ListUsers");
 		Table.SetCell("Description", "List all ZNC users and their connection status");
+
+		Table.AddRow();
+		Table.SetCell("Command", "ListAllUserNetworks");
+		Table.SetCell("Description", "List all ZNC users and their networks");
 
 		Table.AddRow();
 		Table.SetCell("Command", "ListChans");

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2013  See the AUTHORS file for details.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published
@@ -74,14 +74,14 @@ public:
 	CString GetRawParam(const CString& sName, bool bPost = true) const;
 	bool HasParam(const CString& sName, bool bPost = true) const;
 	const std::map<CString, VCString>& GetParams(bool bPost = true) const;
-	unsigned int GetParamValues(const CString& sName, VCString& vsRet, bool bPost = true, const CString& sFilter = "\r\n") const;
-	unsigned int GetParamValues(const CString& sName, std::set<CString>& ssRet, bool bPost = true, const CString& sFilter = "\r\n") const;
+	size_t GetParamValues(const CString& sName, VCString& vsRet, bool bPost = true, const CString& sFilter = "\r\n") const;
+	size_t GetParamValues(const CString& sName, std::set<CString>& ssRet, bool bPost = true, const CString& sFilter = "\r\n") const;
 	// !Parameter access
 private:
 	static CString GetRawParam(const CString& sName, const std::map<CString, VCString>& msvsParams);
 	static CString GetParam(const CString& sName, const std::map<CString, VCString>& msvsParams, const CString& sFilter);
-	static unsigned int GetParamValues(const CString& sName, VCString& vsRet, const std::map<CString, VCString>& msvsParams, const CString& sFilter);
-	static unsigned int GetParamValues(const CString& sName, std::set<CString>& ssRet, const std::map<CString, VCString>& msvsParams, const CString& sFilter);
+	static size_t GetParamValues(const CString& sName, VCString& vsRet, const std::map<CString, VCString>& msvsParams, const CString& sFilter);
+	static size_t GetParamValues(const CString& sName, std::set<CString>& ssRet, const std::map<CString, VCString>& msvsParams, const CString& sFilter);
 
 protected:
 	void PrintPage(const CString& sPage);
