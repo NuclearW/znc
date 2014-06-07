@@ -138,6 +138,7 @@ public:
 
 template<> void TModInfo<CKvircMod>(CModInfo& Info) {
 	Info.SetWikiPage("kvirc");
+	Info.AddType(CModInfo::UserModule);
 }
 
 MODULEDEFS(CKvircMod, "Allows to set your gender and avatar, so KVIrc users will see it.")
