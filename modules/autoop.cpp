@@ -1,9 +1,17 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <znc/IRCNetwork.h>
@@ -202,7 +210,7 @@ public:
 		return HALTCORE;
 	}
 
-	virtual void OnOp(const CNick& OpNick, const CNick& Nick, CChan& Channel, bool bNoChange) {
+	virtual void OnOp2(const CNick* pOpNick, const CNick& Nick, CChan& Channel, bool bNoChange) {
 		if (Nick.GetNick() == m_pNetwork->GetIRCNick().GetNick()) {
 			const map<CString,CNick>& msNicks = Channel.GetNicks();
 
@@ -313,19 +321,21 @@ public:
 	bool CheckAutoOp(const CNick& Nick, CChan& Channel) {
 		CAutoOpUser *pUser = FindUserByHost(Nick.GetHostMask(), Channel.GetName());
 
-		if (pUser) {
-			if (pUser->GetUserKey().Equals("__NOKEY__")) {
-				PutIRC("MODE " + Channel.GetName() + " +o " + Nick.GetNick());
-			} else {
-				// then insert this nick into the queue, the timer does the rest
-				CString sNick = Nick.GetNick().AsLower();
-				if (m_msQueue.find(sNick) == m_msQueue.end()) {
-					m_msQueue[sNick] = "";
-				}
+		if (!pUser) {
+			return false;
+		}
+
+		if (pUser->GetUserKey().Equals("__NOKEY__")) {
+			PutIRC("MODE " + Channel.GetName() + " +o " + Nick.GetNick());
+		} else {
+			// then insert this nick into the queue, the timer does the rest
+			CString sNick = Nick.GetNick().AsLower();
+			if (m_msQueue.find(sNick) == m_msQueue.end()) {
+				m_msQueue[sNick] = "";
 			}
 		}
 
-		return pUser;
+		return true;
 	}
 
 	void DelUser(const CString& sUser) {

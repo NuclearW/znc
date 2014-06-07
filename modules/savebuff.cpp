@@ -1,12 +1,22 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
- *
- * Buffer Saving thing, incase your shit goes out while your out
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  * Author: imaginos <imaginos@imaginos.net>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * Buffer Saving thing, incase your shit goes out while your out
  *
  * Its only as secure as your shell, the encryption only offers a slightly
  * better solution then plain text.
@@ -16,10 +26,8 @@
 
 #include <znc/Chan.h>
 #include <znc/User.h>
-#include <znc/Buffer.h>
 #include <znc/IRCNetwork.h>
 #include <znc/FileUtils.h>
-#include <sys/stat.h>
 
 using std::vector;
 
@@ -289,7 +297,7 @@ public:
 		{
 			AddBuffer(*vChans[a], SpoofChanMsg(vChans[a]->GetName(), cNick.GetNickMask() + " QUIT " + sMessage));
 		}
-		if (cNick.GetNick().Equals(m_pUser->GetNick()))
+		if (cNick.NickEquals(m_pUser->GetNick()))
 			SaveBufferToDisk(); // need to force a save here to see this!
 	}
 
@@ -306,7 +314,7 @@ public:
 	}
 	virtual void OnJoin(const CNick& cNick, CChan& cChannel)
 	{
-		if (cNick.GetNick().Equals(m_pUser->GetNick()) && cChannel.GetBuffer().empty())
+		if (cNick.NickEquals(m_pUser->GetNick()) && cChannel.GetBuffer().empty())
 		{
 			BootStrap((CChan *)&cChannel);
 			if (!cChannel.GetBuffer().empty())
@@ -317,7 +325,7 @@ public:
 	virtual void OnPart(const CNick& cNick, CChan& cChannel)
 	{
 		AddBuffer(cChannel, SpoofChanMsg(cChannel.GetName(), cNick.GetNickMask() + " PART"));
-		if (cNick.GetNick().Equals(m_pUser->GetNick()))
+		if (cNick.NickEquals(m_pUser->GetNick()))
 			SaveBufferToDisk(); // need to force a save here to see this!
 	}
 #endif /* LEGACY_SAVEBUFF */

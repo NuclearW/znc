@@ -1,12 +1,22 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
- *
- * Secure chat system
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  * Author: imaginos <imaginos@imaginos.net>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * Secure chat system
  */
 
 #define REQUIRESSL
@@ -14,8 +24,6 @@
 #include <znc/FileUtils.h>
 #include <znc/User.h>
 #include <znc/IRCNetwork.h>
-#include <znc/znc.h>
-#include <sstream>
 
 using std::pair;
 using std::stringstream;
@@ -89,7 +97,7 @@ public:
 		} else {
 			// Buffer playback
 			vector<CS_STRING>::reverse_iterator it = m_vBuffer.rbegin();
-			for (; it != m_vBuffer.rend(); it++)
+			for (; it != m_vBuffer.rend(); ++it)
 				ReadLine(*it);
 
 			m_vBuffer.clear();

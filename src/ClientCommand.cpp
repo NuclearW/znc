@@ -1,20 +1,25 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-#include <znc/Client.h>
 #include <znc/Chan.h>
 #include <znc/FileUtils.h>
 #include <znc/IRCNetwork.h>
 #include <znc/IRCSock.h>
-#include <znc/Listener.h>
 #include <znc/Server.h>
 #include <znc/User.h>
-#include <znc/znc.h>
 
 using std::vector;
 using std::set;
@@ -66,7 +71,7 @@ void CClient::UserCommand(CString& sLine) {
 		CIRCSock* pIRCSock = m_pNetwork->GetIRCSock();
 		const CString& sPerms = (pIRCSock) ? pIRCSock->GetPerms() : "";
 
-		if (!msNicks.size()) {
+		if (msNicks.empty()) {
 			PutStatus("No nicks on [" + sChan + "]");
 			return;
 		}
@@ -303,6 +308,7 @@ void CClient::UserCommand(CString& sLine) {
 		}
 
 		CString sArgs = sLine.Token(1, true);
+		sArgs.Trim();
 		CServer *pServer = NULL;
 
 		if (!sArgs.empty()) {
@@ -378,6 +384,34 @@ void CClient::UserCommand(CString& sLine) {
 			PutStatus("There were [" + CString(uMatches) + "] channels matching [" + sChan + "]");
 			PutStatus("Enabled [" + CString(uEnabled) + "] channels");
 		}
+	} else if (sCommand.Equals("DISABLECHAN")) {
+		if (!m_pNetwork) {
+			PutStatus("You must be connected with a network to use this command");
+			return;
+		}
+
+		CString sChan = sLine.Token(1, true);
+
+		if (sChan.empty()) {
+			PutStatus("Usage: DisableChan <channel>");
+		} else {
+			const vector<CChan*>& vChans = m_pNetwork->GetChans();
+			vector<CChan*>::const_iterator it;
+			unsigned int uMatches = 0, uDisabled = 0;
+			for (it = vChans.begin(); it != vChans.end(); ++it) {
+				if (!(*it)->GetName().WildCmp(sChan))
+					continue;
+				uMatches++;
+
+				if ((*it)->IsDisabled())
+					continue;
+				uDisabled++;
+				(*it)->Disable();
+			}
+
+			PutStatus("There were [" + CString(uMatches) + "] channels matching [" + sChan + "]");
+			PutStatus("Disabled [" + CString(uDisabled) + "] channels");
+		}
 	} else if (sCommand.Equals("LISTCHANS")) {
 		if (!m_pNetwork) {
 			PutStatus("You must be connected with a network to use this command");
@@ -414,7 +448,7 @@ void CClient::UserCommand(CString& sLine) {
 		CIRCSock* pIRCSock = pNetwork->GetIRCSock();
 		const CString& sPerms = (pIRCSock) ? pIRCSock->GetPerms() : "";
 
-		if (!vChans.size()) {
+		if (vChans.empty()) {
 			PutStatus("There are no channels defined.");
 			return;
 		}
@@ -462,7 +496,7 @@ void CClient::UserCommand(CString& sLine) {
 			" - Detached: " + CString(uNumDetached) + " - Disabled: " + CString(uNumDisabled));
 	} else if (sCommand.Equals("ADDNETWORK")) {
 		if (!m_pUser->IsAdmin() && !m_pUser->HasSpaceForNewNetwork()) {
-			PutStatus("Network number limit reached. Ask an admin to increase the limit for you, or delete few old ones using /znc DelNetwork <name>");
+			PutStatus("Network number limit reached. Ask an admin to increase the limit for you, or delete unneeded networks using /znc DelNetwork <name>");
 			return;
 		}
 
@@ -472,12 +506,17 @@ void CClient::UserCommand(CString& sLine) {
 			PutStatus("Usage: AddNetwork <name>");
 			return;
 		}
+		if (!CIRCNetwork::IsValidNetwork(sNetwork)) {
+			PutStatus("Network name should be alphanumeric");
+			return;
+		}
 
-		if (m_pUser->AddNetwork(sNetwork)) {
+		CString sNetworkAddError;
+		if (m_pUser->AddNetwork(sNetwork, sNetworkAddError)) {
 			PutStatus("Network added. Use /znc JumpNetwork " + sNetwork + ", or connect to ZNC with username " + m_pUser->GetUserName() + "/" + sNetwork + " (instead of just " + m_pUser->GetUserName() + ") to connect to it.");
 		} else {
 			PutStatus("Unable to add that network");
-			PutStatus("Perhaps that network is already added");
+			PutStatus(sNetworkAddError);
 		}
 	} else if (sCommand.Equals("DELNETWORK")) {
 		CString sNetwork = sLine.Token(1);
@@ -605,10 +644,11 @@ void CClient::UserCommand(CString& sLine) {
 			fOldNVFile.Copy(sNewModPath + "/.registry");
 		}
 
-		CIRCNetwork* pNewNetwork = pNewUser->AddNetwork(sNewNetwork);
+		CString sNetworkAddError;
+		CIRCNetwork* pNewNetwork = pNewUser->AddNetwork(sNewNetwork, sNetworkAddError);
 
 		if (!pNewNetwork) {
-			PutStatus("Error adding network.");
+			PutStatus("Error adding network:" + sNetworkAddError);
 			return;
 		}
 
@@ -673,7 +713,7 @@ void CClient::UserCommand(CString& sLine) {
 		CString sPass = sLine.Token(3);
 
 		if (sServer.empty()) {
-			PutStatus("Usage: RemServer <host> [port] [pass]");
+			PutStatus("Usage: DelServer <host> [port] [pass]");
 			return;
 		}
 
@@ -831,7 +871,7 @@ void CClient::UserCommand(CString& sLine) {
 		set<CModInfo> ssUserMods;
 		CZNC::Get().GetModules().GetAvailableMods(ssUserMods);
 
-		if (!ssUserMods.size()) {
+		if (ssUserMods.empty()) {
 			PutStatus("No user modules available.");
 		} else {
 			PutStatus("User modules:");
@@ -853,7 +893,7 @@ void CClient::UserCommand(CString& sLine) {
 		set<CModInfo> ssNetworkMods;
 		CZNC::Get().GetModules().GetAvailableMods(ssNetworkMods, CModInfo::NetworkModule);
 
-		if (!ssNetworkMods.size()) {
+		if (ssNetworkMods.empty()) {
 			PutStatus("No network modules available.");
 		} else {
 			PutStatus("Network modules:");
@@ -1109,11 +1149,11 @@ void CClient::UserCommand(CString& sLine) {
 		} else {
 			PutStatus("The host [" + sHost + "] is already in the list");
 		}
-	} else if ((sCommand.Equals("REMBINDHOST") || sCommand.Equals("REMVHOST") || sCommand.Equals("DELVHOST")) && m_pUser->IsAdmin()) {
+	} else if ((sCommand.Equals("REMBINDHOST") || sCommand.Equals("DELBINDHOST") || sCommand.Equals("REMVHOST") || sCommand.Equals("DELVHOST")) && m_pUser->IsAdmin()) {
 		CString sHost = sLine.Token(1);
 
 		if (sHost.empty()) {
-			PutStatus("Usage: RemBindHost <host>");
+			PutStatus("Usage: DelBindHost <host>");
 			return;
 		}
 
@@ -1215,10 +1255,10 @@ void CClient::UserCommand(CString& sLine) {
 			return;
 		}
 		m_pNetwork->SetBindHost("");
-		PutStatus("Bind host cleared");
+		PutStatus("Bind host cleared for this network.");
 	} else if (sCommand.Equals("CLEARUSERBINDHOST") && (m_pUser->IsAdmin() || !m_pUser->DenySetBindHost())) {
 		m_pUser->SetBindHost("");
-		PutStatus("Bind host cleared");
+		PutStatus("Bind host cleared for your user.");
 	} else if (sCommand.Equals("SHOWBINDHOST")) {
 		PutStatus("This user's default bind host " + (m_pUser->GetBindHost().empty() ? "not set" : "is [" + m_pUser->GetBindHost() + "]"));
 		if (m_pNetwork) {
@@ -1390,6 +1430,7 @@ void CClient::UserPortCommand(CString& sLine) {
 		Table.AddColumn("SSL");
 		Table.AddColumn("Proto");
 		Table.AddColumn("IRC/Web");
+		Table.AddColumn("URIPrefix");
 
 		vector<CListener*>::const_iterator it;
 		const vector<CListener*>& vpListeners = CZNC::Get().GetListeners();
@@ -1405,6 +1446,7 @@ void CClient::UserPortCommand(CString& sLine) {
 
 			CListener::EAcceptType eAccept = (*it)->GetAcceptType();
 			Table.SetCell("IRC/Web", (eAccept == CListener::ACCEPT_ALL ? "All" : (eAccept == CListener::ACCEPT_IRC ? "IRC" : "Web")));
+			Table.SetCell("URIPrefix", (*it)->GetURIPrefix() + "/");
 		}
 
 		PutStatus(Table);
@@ -1443,12 +1485,13 @@ void CClient::UserPortCommand(CString& sLine) {
 		}
 
 		if (sPort.empty() || sAddr.empty() || sAccept.empty()) {
-			PutStatus("Usage: AddPort <[+]port> <ipv4|ipv6|all> <web|irc|all> [bindhost]");
+			PutStatus("Usage: AddPort <[+]port> <ipv4|ipv6|all> <web|irc|all> [bindhost [uriprefix]]");
 		} else {
 			bool bSSL = (sPort.Left(1).Equals("+"));
 			const CString sBindHost = sLine.Token(4);
+			const CString sURIPrefix = sLine.Token(5);
 
-			CListener* pListener = new CListener(uPort, sBindHost, bSSL, eAddr, eAccept);
+			CListener* pListener = new CListener(uPort, sBindHost, sURIPrefix, bSSL, eAddr, eAccept);
 
 			if (!pListener->Listen()) {
 				delete pListener;
@@ -1484,7 +1527,7 @@ void CClient::HelpUser() {
 	Table.AddColumn("Arguments");
 	Table.AddColumn("Description");
 
-	PutStatus("In the following list all occurences of <#chan> support wildcards (* and ?)");
+	PutStatus("In the following list all occurrences of <#chan> support wildcards (* and ?)");
 	PutStatus("(Except ListNicks)");
 
 	Table.AddRow();
@@ -1552,7 +1595,7 @@ void CClient::HelpUser() {
 	Table.SetCell("Description", "Add a server to the list of alternate/backup servers of current IRC network.");
 
 	Table.AddRow();
-	Table.SetCell("Command", "RemServer");
+	Table.SetCell("Command", "DelServer");
 	Table.SetCell("Arguments", "<host> [port] [pass]");
 	Table.SetCell("Description", "Remove a server from the list of alternate/backup servers of current IRC network");
 
@@ -1560,6 +1603,11 @@ void CClient::HelpUser() {
 	Table.SetCell("Command", "Enablechan");
 	Table.SetCell("Arguments", "<#chan>");
 	Table.SetCell("Description", "Enable the channel");
+
+	Table.AddRow();
+	Table.SetCell("Command", "Disablechan");
+	Table.SetCell("Arguments", "<#chan>");
+	Table.SetCell("Description", "Disable the channel");
 
 	Table.AddRow();
 	Table.SetCell("Command", "Detach");
@@ -1596,7 +1644,7 @@ void CClient::HelpUser() {
 		Table.SetCell("Description", "Adds a bind host for normal users to use");
 
 		Table.AddRow();
-		Table.SetCell("Command", "RemBindHost");
+		Table.SetCell("Command", "DelBindHost");
 		Table.SetCell("Arguments", "<host>");
 		Table.SetCell("Description", "Removes a bind host from the list");
 	}

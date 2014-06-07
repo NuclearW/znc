@@ -1,20 +1,25 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-#include <znc/Client.h>
 #include <znc/Chan.h>
-#include <znc/FileUtils.h>
 #include <znc/IRCSock.h>
 #include <znc/User.h>
 #include <znc/IRCNetwork.h>
-#include <znc/znc.h>
-#include <znc/WebModules.h>
 
+using std::map;
 using std::vector;
 
 #define CALLMOD(MOD, CLIENT, USER, NETWORK, FUNC) {  \
@@ -24,7 +29,7 @@ using std::vector;
 			pModule->SetClient(CLIENT);  \
 			pModule->FUNC;  \
 			pModule->SetClient(NULL);  \
-		} catch (CModule::EModException e) {  \
+		} catch (const CModule::EModException& e) {  \
 			if (e == CModule::UNLOAD) {  \
 				(NETWORK)->GetModules().UnloadModule(MOD);  \
 			}  \
@@ -36,7 +41,7 @@ using std::vector;
 			pModule->FUNC;  \
 			pModule->SetClient(NULL);  \
 			pModule->SetNetwork(NULL);  \
-		} catch (CModule::EModException e) {  \
+		} catch (const CModule::EModException& e) {  \
 			if (e == CModule::UNLOAD) {  \
 				(USER)->GetModules().UnloadModule(MOD);  \
 			}  \
@@ -50,7 +55,7 @@ using std::vector;
 			pModule->SetClient(NULL);  \
 			pModule->SetNetwork(NULL);  \
 			pModule->SetUser(NULL);  \
-		} catch (CModule::EModException e) {  \
+		} catch (const CModule::EModException& e) {  \
 			if (e == CModule::UNLOAD) {  \
 					CZNC::Get().GetModules().UnloadModule(MOD);  \
 			}  \
@@ -669,6 +674,7 @@ void CClient::AcceptLogin(CUser& User) {
 	SetTimeout(540, TMO_READ);
 
 	SetSockName("USR::" + m_pUser->GetUserName());
+	SetEncoding(m_pUser->GetClientEncoding());
 
 	if (!m_sNetwork.empty()) {
 		m_pNetwork = m_pUser->FindNetwork(m_sNetwork);
@@ -748,8 +754,12 @@ CString CClient::GetFullName() {
 }
 
 void CClient::PutClient(const CString& sLine) {
-	DEBUG("(" << GetFullName() << ") ZNC -> CLI [" << sLine << "]");
-	Write(sLine + "\r\n");
+	bool bReturn = false;
+	CString sCopy = sLine;
+	ALLMODULECALL(OnSendToClient(sCopy, *this), &bReturn);
+	if (bReturn) return;
+	DEBUG("(" << GetFullName() << ") ZNC -> CLI [" << sCopy << "]");
+	Write(sCopy + "\r\n");
 }
 
 void CClient::PutStatusNotice(const CString& sLine) {
@@ -923,6 +933,6 @@ void CClient::HandleCap(const CString& sLine)
 		}
 		RespondCap("ACK :" + sList.TrimSuffix_n(" "));
 	} else {
-		PutClient(":irc.znc.in 410 " + GetNick() + " :Invalid CAP subcommand");
+		PutClient(":irc.znc.in 410 " + GetNick() + " " + sSubCmd + " :Invalid CAP subcommand");
 	}
 }

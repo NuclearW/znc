@@ -1,13 +1,19 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-#include <znc/Modules.h>
-#include <znc/User.h>
 #include <znc/IRCNetwork.h>
 #include <znc/IRCSock.h>
 
@@ -72,7 +78,7 @@ public:
 	void OnNick(const CNick& Nick, const CString& sNewNick, const vector<CChan*>& vChans) {
 		if (sNewNick == m_pNetwork->GetIRCSock()->GetNick()) {
 			// We are changing our own nick
-			if (Nick.GetNick().Equals(GetNick())) {
+			if (Nick.NickEquals(GetNick())) {
 				// We are changing our nick away from the conf setting.
 				// Let's assume the user wants this and disable
 				// this module (to avoid fighting nickserv).
@@ -86,14 +92,14 @@ public:
 		}
 
 		// If the nick we want is free now, be fast and get the nick
-		if (Nick.GetNick().Equals(GetNick())) {
+		if (Nick.NickEquals(GetNick())) {
 			KeepNick();
 		}
 	}
 
 	void OnQuit(const CNick& Nick, const CString& sMessage, const vector<CChan*>& vChans) {
 		// If someone with the nick we want quits, be fast and get the nick
-		if (Nick.GetNick().Equals(GetNick())) {
+		if (Nick.NickEquals(GetNick())) {
 			KeepNick();
 		}
 	}
@@ -123,7 +129,7 @@ public:
 			return;
 
 		m_pTimer->Stop();
-		RemTimer(m_pTimer->GetName());
+		RemTimer(m_pTimer);
 		m_pTimer = NULL;
 	}
 

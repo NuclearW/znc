@@ -1,9 +1,17 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef SOCKET_H
@@ -11,6 +19,7 @@
 
 #include <znc/zncconfig.h>
 #include <znc/Csocket.h>
+#include <znc/Threads.h>
 
 class CModule;
 
@@ -21,6 +30,11 @@ public:
 	~CZNCSock() {}
 
 	virtual int ConvertAddress(const struct sockaddr_storage * pAddr, socklen_t iAddrLen, CS_STRING & sIP, u_short * piPort);
+
+#ifndef HAVE_ICU
+	// Don't fail to compile when ICU is not enabled
+	void SetEncoding(const CString&) {}
+#endif
 };
 
 enum EAddrType {
@@ -101,11 +115,9 @@ public:
 private:
 	void FinishConnect(const CString& sHostname, u_short iPort, const CString& sSockName, int iTimeout, bool bSSL, const CString& sBindHost, CZNCSock *pcSock);
 
-#ifdef HAVE_THREADED_DNS
-	int              m_iTDNSpipe[2];
-
 	class CTDNSMonitorFD;
 	friend class CTDNSMonitorFD;
+#ifdef HAVE_THREADED_DNS
 	struct TDNSTask {
 		CString   sHostname;
 		u_short   iPort;
@@ -120,41 +132,22 @@ private:
 		addrinfo* aiTarget;
 		addrinfo* aiBind;
 	};
-	struct TDNSArg {
-		CString          sHostname;
-		TDNSTask*        task;
-		int              fd;
-		bool             bBind;
+	class CDNSJob : public CJob {
+	public:
+		CString       sHostname;
+		TDNSTask*     task;
+		CSockManager* pManager;
+		bool          bBind;
 
-		int              iRes;
-		addrinfo*        aiResult;
-	};
-	struct TDNSStatus {
-		/* mutex which protects this whole struct */
-		pthread_mutex_t mutex;
-		/* condition variable for idle threads */
-		pthread_cond_t cond;
-		/* When this is true, all threads should exit */
-		bool done;
-		/* Total number of running DNS threads */
-		size_t num_threads;
-		/* Number of DNS threads which don't have any work */
-		size_t num_idle;
-		/* List of pending DNS jobs */
-		std::list<TDNSArg *> jobs;
+		int           iRes;
+		addrinfo*     aiResult;
+
+		void runThread();
+		void runMain();
 	};
 	void StartTDNSThread(TDNSTask* task, bool bBind);
 	void SetTDNSThreadFinished(TDNSTask* task, bool bBind, addrinfo* aiResult);
-	void RetrieveTDNSResult();
 	static void* TDNSThread(void* argument);
-	static void DoDNS(TDNSArg *arg);
-
-	/** Must be called with threadStatus->mutex held.
-	 * @returns false when the calling DNS thread should exit.
-	 */
-	static bool ThreadNeeded(struct TDNSStatus* status);
-
-	TDNSStatus m_threadStatus;
 #endif
 protected:
 };

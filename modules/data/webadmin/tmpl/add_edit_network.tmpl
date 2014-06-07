@@ -5,7 +5,7 @@
     <p>To connect to this network from your IRC client, you can set the server password field as follows: <code><? VAR Username ?>/<? IF Edit ?><? VAR Name ?><? ELSE ?>&lt;network&gt;<? ENDIF ?>:&lt;password&gt;</code> or username field as <code><? VAR Username ?>/<? IF Edit ?><? VAR Name ?><? ELSE ?>&lt;network&gt;<? ENDIF ?></code></p>
 </div>
 
-<form action="<? IF Edit ?>editnetwork<? ELSE ?>addnetwork<? ENDIF ?>" method="post">
+<form action="<? VAR URIPrefix TOP ?><? VAR ModPath TOP ?><? IF Edit ?>editnetwork<? ELSE ?>addnetwork<? ENDIF ?>" method="post">
 	<? INC _csrf_check.tmpl ?>
 	<div class="section">
 		<input type="hidden" name="submitted" value="1" />
@@ -72,7 +72,7 @@
 					<div><textarea name="servers" cols="70" rows="5"><? LOOP ServerLoop ?><? VAR Server ?>
 <? ENDLOOP ?>
 </textarea></div>
-					<br /><span class="info">One server per line, host [[+]port] [password]</span>
+					<br /><span class="info">One server per line, "host [[+]port] [password]", + means SSL</span>
 				</div>
 
 				<div class="subsection">
@@ -116,7 +116,7 @@
 				<table>
 					<thead>
 					<tr>
-						<td>[<a href="addchan?user=<? VAR Username ESC=URL ?>&amp;network=<? VAR Name ESC=URL ?>">Add</a>]</td>
+						<td>[<a href="<? VAR URIPrefix TOP ?><? VAR ModPath TOP ?>addchan?user=<? VAR Username ESC=URL ?>&amp;network=<? VAR Name ESC=URL ?>">Add</a>]</td>
 				<? IF ChannelLoop ?>
 						<td>Save</td>
 						<td>Name</td>
@@ -135,7 +135,7 @@
 					<tr class="<? IF __EVEN__ ?>evenrow<? ELSE ?>oddrow<? ENDIF ?>">
 						<td>
 							<input type="hidden" name="channel" value="<? VAR Name ?>" />
-							[<a href="editchan?user=<? VAR Username ESC=URL ?>&amp;network=<? VAR Network ESC=URL ?>&amp;name=<? VAR Name ESC=URL ?>">Edit</a>] [<a href="delchan?user=<? VAR Username ESC=URL ?>&amp;network=<? VAR Network ESC=URL ?>&amp;name=<? VAR Name ESC=URL ?>">Del</a>]
+							[<a href="<? VAR URIPrefix TOP ?><? VAR ModPath TOP ?>editchan?user=<? VAR Username ESC=URL ?>&amp;network=<? VAR Network ESC=URL ?>&amp;name=<? VAR Name ESC=URL ?>">Edit</a>] [<a href="<? VAR URIPrefix TOP ?><? VAR ModPath TOP ?>delchan?user=<? VAR Username ESC=URL ?>&amp;network=<? VAR Network ESC=URL ?>&amp;name=<? VAR Name ESC=URL ?>">Del</a>]
 						</td>
 						<td><input type="checkbox" name="save_<? VAR Name ?>"<? IF InConfig ?> checked="checked"<? ENDIF ?> /></td>
 						<td><? VAR Name ?></td>
@@ -162,6 +162,8 @@
 						<td>Name</td>
 						<td>Arguments</td>
 						<td>Description</td>
+						<td>Loaded globally</td>
+						<td>Loaded by user</td>
 					</tr>
 					</thead>
 					<tbody>
@@ -175,12 +177,30 @@
 							<? IF Disabled ?>
 							<? VAR Args ?>
 							<? ELSE ?>
-							<input class="third" type="text" name="modargs_<? VAR Name ?>" value="<? VAR Args ?>"
+							<input class="third" type="text" autocomplete="off" name="modargs_<? VAR Name ?>" value="<? VAR Args ?>"
 							<? IF !HasArgs ?> disabled="disabled"<? ENDIF ?>
 							<? IF ArgsHelpText ?> title="<? VAR ArgsHelpText ?>"<? ENDIF ?> />
 							<? ENDIF ?>
 						</td>
 						<td class="mod_descr"><? VAR Description ?></td>
+						<td align="center">
+							<? IF CanBeLoadedGlobally ?>
+								<input type="checkbox" name="loaded_globally" id="loaded_globally_<? VAR Name ?>"
+								<? IF LoadedGlobally ?>
+									checked="checked"
+								<? ENDIF ?>
+								disabled="disabled"/>
+							<? ENDIF ?>
+						</td>
+						<td align="center">
+							<? IF CanBeLoadedByUser ?>
+								<input type="checkbox" name="loaded_by_user" id="loaded_by_user_<? VAR Name ?>"
+								<? IF LoadedByUser ?>
+									checked="checked"
+								<? ENDIF ?>
+								disabled="disabled"/>
+							<? ENDIF ?>
+						</td>
 					</tr>
 				<? ENDLOOP ?>
 
@@ -190,8 +210,18 @@
 		</div>
 	</div>
 
+	<? LOOP EmbeddedModuleLoop ?>
+		<? IF Embed ?>
+		<div class="section">
+			<h3>Module <? VAR ModName ?></h3>
+			<? INC *Embed ?>
+		</div>
+		<? ENDIF ?>
+	<? ENDLOOP ?>
+
 	<div class="submitline">
-		<input type="submit" value="<? IF Edit ?>Save<? ELSE ?>Add Network<? ENDIF ?>" />
+		<input type="submit" name="submit_return" value="<? IF Edit ?>Save<? ELSE ?>Add Network<? ENDIF ?> and return" />
+		<input type="submit" name="submit_continue" value="<? IF Edit ?>Save<? ELSE ?>Add Network<? ENDIF ?> and continue" />
 	</div>
 </form>
 

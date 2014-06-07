@@ -1,18 +1,21 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-#include <znc/zncconfig.h>
-#include <znc/znc.h>
 #include <znc/User.h>
 #include <znc/IRCNetwork.h>
-#include <znc/Modules.h>
-#include <znc/Socket.h>
-#include <znc/FileUtils.h>
 
 using std::set;
 
@@ -157,11 +160,11 @@ public:
 
 	virtual EModRet OnUserCTCP(CString& sTarget, CString& sMessage) {
 		if (sMessage.Equals("DCC ", false, 4)) {
-			CString sType = sMessage.Token(1);
-			CString sFile = sMessage.Token(2);
-			unsigned long uLongIP = sMessage.Token(3).ToULong();
-			unsigned short uPort = sMessage.Token(4).ToUShort();
-			unsigned long uFileSize = sMessage.Token(5).ToULong();
+			CString sType = sMessage.Token(1, false, " ", false, "\"", "\"", true);
+			CString sFile = sMessage.Token(2, false, " ", false, "\"", "\"", false);
+			unsigned long uLongIP = sMessage.Token(3, false, " ", false, "\"", "\"", true).ToULong();
+			unsigned short uPort = sMessage.Token(4, false, " ", false, "\"", "\"", true).ToUShort();
+			unsigned long uFileSize = sMessage.Token(5, false, " ", false, "\"", "\"", true).ToULong();
 			CString sIP = GetLocalDCCIP();
 
 			if (!UseClientIP()) {
@@ -212,11 +215,11 @@ public:
 	virtual EModRet OnPrivCTCP(CNick& Nick, CString& sMessage) {
 		if (sMessage.Equals("DCC ", false, 4) && m_pNetwork->IsUserAttached()) {
 			// DCC CHAT chat 2453612361 44592
-			CString sType = sMessage.Token(1);
-			CString sFile = sMessage.Token(2);
-			unsigned long uLongIP = sMessage.Token(3).ToULong();
-			unsigned short uPort = sMessage.Token(4).ToUShort();
-			unsigned long uFileSize = sMessage.Token(5).ToULong();
+			CString sType = sMessage.Token(1, false, " ", false, "\"", "\"", true);
+			CString sFile = sMessage.Token(2, false, " ", false, "\"", "\"", false);
+			unsigned long uLongIP = sMessage.Token(3, false, " ", false, "\"", "\"", true).ToULong();
+			unsigned short uPort = sMessage.Token(4, false, " ", false, "\"", "\"", true).ToUShort();
+			unsigned long uFileSize = sMessage.Token(5, false, " ", false, "\"", "\"", true).ToULong();
 
 			if (sType.Equals("CHAT")) {
 				CNick FromNick(Nick.GetNickMask());

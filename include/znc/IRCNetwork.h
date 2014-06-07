@@ -1,9 +1,17 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef _IRCNETWORK_H
@@ -68,10 +76,12 @@ public:
 
 	const std::vector<CChan*>& GetChans() const;
 	CChan* FindChan(CString sName) const;
+	std::vector<CChan*> FindChans(const CString& sWild) const;
 	bool AddChan(CChan* pChan);
 	bool AddChan(const CString& sName, bool bInConfig);
 	bool DelChan(const CString& sName);
 	void JoinChans();
+	void JoinChans(std::set<CChan*>& sChans);
 
 	const CString& GetChanPrefixes() const { return m_sChanPrefixes; };
 	void SetChanPrefixes(const CString& s) { m_sChanPrefixes = s; };
@@ -132,12 +142,14 @@ public:
 	const CString& GetIdent(const bool bAllowDefault = true) const;
 	const CString& GetRealName() const;
 	const CString& GetBindHost() const;
+	const CString& GetEncoding() const;
 
 	void SetNick(const CString& s);
 	void SetAltNick(const CString& s);
 	void SetIdent(const CString& s);
 	void SetRealName(const CString& s);
 	void SetBindHost(const CString& s);
+	void SetEncoding(const CString& s);
 
 	double GetFloodRate() const { return m_fFloodRate; }
 	unsigned short int GetFloodBurst() const { return m_uFloodBurst; }
@@ -158,6 +170,7 @@ protected:
 	CString            m_sIdent;
 	CString            m_sRealName;
 	CString            m_sBindHost;
+	CString            m_sEncoding;
 
 	CModules*          m_pModules;
 

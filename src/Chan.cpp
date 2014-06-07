@@ -1,17 +1,23 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <znc/Chan.h>
-#include <znc/FileUtils.h>
 #include <znc/IRCSock.h>
 #include <znc/User.h>
 #include <znc/IRCNetwork.h>
-#include <znc/znc.h>
 #include <znc/Config.h>
 
 using std::set;
@@ -257,9 +263,7 @@ void CChan::ModeChange(const CString& sModes, const CNick* pOpNick) {
 			pOpNick = OpNick;
 	}
 
-	if (pOpNick) {
-		NETWORKMODULECALL(OnRawMode(*pOpNick, *this, sModeArg, sArgs), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
-	}
+	NETWORKMODULECALL(OnRawMode2(pOpNick, *this, sModeArg, sArgs), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
 
 	for (unsigned int a = 0; a < sModeArg.size(); a++) {
 		const unsigned char& uMode = sModeArg[a];
@@ -280,32 +284,30 @@ void CChan::ModeChange(const CString& sModes, const CNick* pOpNick) {
 					if (bAdd) {
 						pNick->AddPerm(uPerm);
 
-						if (pNick->GetNick().Equals(m_pNetwork->GetCurNick())) {
+						if (pNick->NickEquals(m_pNetwork->GetCurNick())) {
 							AddPerm(uPerm);
 						}
 					} else {
 						pNick->RemPerm(uPerm);
 
-						if (pNick->GetNick().Equals(m_pNetwork->GetCurNick())) {
+						if (pNick->NickEquals(m_pNetwork->GetCurNick())) {
 							RemPerm(uPerm);
 						}
 					}
 
-					if (uMode && pOpNick) {
-						NETWORKMODULECALL(OnChanPermission(*pOpNick, *pNick, *this, uMode, bAdd, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
+					NETWORKMODULECALL(OnChanPermission2(pOpNick, *pNick, *this, uMode, bAdd, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
 
-						if (uMode == CChan::M_Op) {
-							if (bAdd) {
-								NETWORKMODULECALL(OnOp(*pOpNick, *pNick, *this, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
-							} else {
-								NETWORKMODULECALL(OnDeop(*pOpNick, *pNick, *this, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
-							}
-						} else if (uMode == CChan::M_Voice) {
-							if (bAdd) {
-								NETWORKMODULECALL(OnVoice(*pOpNick, *pNick, *this, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
-							} else {
-								NETWORKMODULECALL(OnDevoice(*pOpNick, *pNick, *this, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
-							}
+					if (uMode == CChan::M_Op) {
+						if (bAdd) {
+							NETWORKMODULECALL(OnOp2(pOpNick, *pNick, *this, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
+						} else {
+							NETWORKMODULECALL(OnDeop2(pOpNick, *pNick, *this, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
+						}
+					} else if (uMode == CChan::M_Voice) {
+						if (bAdd) {
+							NETWORKMODULECALL(OnVoice2(pOpNick, *pNick, *this, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
+						} else {
+							NETWORKMODULECALL(OnDevoice2(pOpNick, *pNick, *this, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
 						}
 					}
 				}
@@ -332,17 +334,15 @@ void CChan::ModeChange(const CString& sModes, const CNick* pOpNick) {
 					break;
 			}
 
-			if (pOpNick) {
-				bool bNoChange;
-				if (bList) {
-					bNoChange = false;
-				} else if (bAdd) {
-					bNoChange = HasMode(uMode) && GetModeArg(uMode) == sArg;
-				} else {
-					bNoChange = !HasMode(uMode);
-				}
-				NETWORKMODULECALL(OnMode(*pOpNick, *this, uMode, sArg, bAdd, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
+			bool bNoChange;
+			if (bList) {
+				bNoChange = false;
+			} else if (bAdd) {
+				bNoChange = HasMode(uMode) && GetModeArg(uMode) == sArg;
+			} else {
+				bNoChange = !HasMode(uMode);
 			}
+			NETWORKMODULECALL(OnMode2(pOpNick, *this, uMode, sArg, bAdd, bNoChange), m_pNetwork->GetUser(), m_pNetwork, NULL, NOTHING);
 
 			if (!bList) {
 				(bAdd) ? AddMode(uMode, sArg) : RemMode(uMode);
@@ -458,7 +458,7 @@ bool CChan::AddNick(const CString& sNick) {
 		pNick->AddPerm(sPrefix[i]);
 	}
 
-	if (pNick->GetNick().Equals(m_pNetwork->GetCurNick())) {
+	if (pNick->NickEquals(m_pNetwork->GetCurNick())) {
 		for (CString::size_type i = 0; i < sPrefix.length(); i++) {
 			AddPerm(sPrefix[i]);
 		}
@@ -526,6 +526,10 @@ CNick* CChan::FindNick(const CString& sNick) {
 }
 
 void CChan::SendBuffer(CClient* pClient) {
+	SendBuffer(pClient, m_Buffer);
+}
+
+void CChan::SendBuffer(CClient* pClient, const CBuffer& Buffer) {
 	if (m_pNetwork && m_pNetwork->IsUserAttached()) {
 		// in the event that pClient is NULL, need to send this to all clients for the user
 		// I'm presuming here that pClient is listed inside vClients thus vClients at this
@@ -541,7 +545,7 @@ void CChan::SendBuffer(CClient* pClient) {
 		// if pClient is not NULL, the loops break after the first iteration.
 		//
 		// Rework this if you like ...
-		if (!m_Buffer.IsEmpty()) {
+		if (!Buffer.IsEmpty()) {
 			const vector<CClient*> & vClients = m_pNetwork->GetClients();
 			for (size_t uClient = 0; uClient < vClients.size(); ++uClient) {
 				CClient * pUseClient = (pClient ? pClient : vClients[uClient]);
@@ -553,9 +557,9 @@ void CChan::SendBuffer(CClient* pClient) {
 					m_pNetwork->PutUser(":***!znc@znc.in PRIVMSG " + GetName() + " :Buffer Playback...", pUseClient);
 				}
 
-				size_t uSize = m_Buffer.Size();
+				size_t uSize = Buffer.Size();
 				for (size_t uIdx = 0; uIdx < uSize; uIdx++) {
-					CString sLine = m_Buffer.GetLine(uIdx, *pUseClient);
+					CString sLine = Buffer.GetLine(uIdx, *pUseClient);
 					bool bNotShowThisLine = false;
 					NETWORKMODULECALL(OnChanBufferPlayLine(*this, *pUseClient, sLine), m_pNetwork->GetUser(), m_pNetwork, NULL, &bNotShowThisLine);
 					if (bNotShowThisLine) continue;

@@ -18,7 +18,7 @@
 Core:
 
  - GNU make (try gmake if make fails)
- - GCC 3 or later
+ - GCC 4 or later
 
 ## Optional Requirements
 
@@ -35,7 +35,7 @@ modpython:
 
  - This needs perl(!) and python's bundled libpython
 
-saslauth:
+cyrusauth:
 
  - This module needs cyrus-sasl2
 
@@ -44,7 +44,7 @@ saslauth:
 Installation is done with the `./configure ; make ; make install` commands.
 
 If you are building from git, you will need to run `./autogen.sh` first to produce the `configure` script.
-Note that this requires `automake` to be installed.
+Note that this requires `automake` and `gettext` to be installed.
 
 You can use
 	./configure --help
@@ -148,7 +148,7 @@ Python modules are loaded through the global module [ModPython](http://wiki.znc.
 
 ## Further infos
 
-Please visit http://znc.in/ or #znc on EFNet if you still have questions.
+Please visit http://znc.in/ or #znc on EFNet or freenode if you still have questions.
 
 You can get the latest development version with git:
 	git clone git://github.com/znc/znc.git

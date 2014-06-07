@@ -36,7 +36,6 @@ PYTHON_ON:= @PYTHON@
 PY_CFLAGS:= @python_CFLAGS@
 PY_LDFLAGS:=@python_LIBS@
 SWIG     := @SWIG@
-SWIG_ON  := @USESWIG@
 MODDIR   := @MODDIR@
 DATADIR  := @DATADIR@
 LIBZNC   := @LIBZNC@
@@ -89,11 +88,6 @@ FILES    := $(shell echo $(FILES) | sed -e "s:cyrusauth::")
 endif
 cyrusauthLDFLAGS := -lsasl2
 
-ifeq "@CHARSET@" ""
-FILES    := $(shell echo $(FILES) | sed -e "s:charset::")
-endif
-charsetLDFLAGS := @LIBICONV@
-
 TARGETS  := $(addsuffix .so, $(FILES))
 
 CLEAN    += *.so *.o
@@ -124,7 +118,7 @@ clean:
 	$(Q)$(CXX) $(MODFLAGS) -c -o $@ $< $($(notdir $(basename $@))CXXFLAGS) -MD -MF .depend/$(notdir $@).dep
 
 %.so: %.o Makefile
-	$(E) Linking module $(notdir $(basename $@))...
+	$(E) "Linking  module" $(notdir $(basename $@))...
 	$(Q)$(CXX) $(MODFLAGS) $(LDFLAGS) $(MODLINK) -o $@ $< $($(notdir $(basename $@))LDFLAGS) $(LIBS)
 
 uninstall:

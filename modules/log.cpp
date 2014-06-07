@@ -1,10 +1,18 @@
 /*
- * Copyright (C) 2008-2012  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  * Copyright (C) 2006-2007, CNU <bshalm@broadpark.no> (http://cnu.dieplz.net/znc)
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <znc/FileUtils.h>
@@ -17,7 +25,10 @@ using std::vector;
 
 class CLogMod: public CModule {
 public:
-	MODCONSTRUCTOR(CLogMod) {}
+	MODCONSTRUCTOR(CLogMod)
+	{
+		m_bSanitize = false;
+	}
 
 	void PutLog(const CString& sLine, const CString& sWindow = "status");
 	void PutLog(const CString& sLine, const CChan& Channel);
@@ -29,7 +40,7 @@ public:
 	virtual void OnIRCDisconnected();
 	virtual EModRet OnBroadcast(CString& sMessage);
 
-	virtual void OnRawMode(const CNick& OpNick, CChan& Channel, const CString& sModes, const CString& sArgs);
+	virtual void OnRawMode2(const CNick* pOpNick, CChan& Channel, const CString& sModes, const CString& sArgs);
 	virtual void OnKick(const CNick& OpNick, const CString& sKickedNick, CChan& Channel, const CString& sMessage);
 	virtual void OnQuit(const CNick& Nick, const CString& sMessage, const vector<CChan*>& vChans);
 	virtual void OnJoin(const CNick& Nick, CChan& Channel);
@@ -54,6 +65,7 @@ public:
 
 private:
 	CString                 m_sLogPath;
+	bool                    m_bSanitize;
 };
 
 void CLogMod::PutLog(const CString& sLine, const CString& sWindow /*= "Status"*/)
@@ -72,7 +84,7 @@ void CLogMod::PutLog(const CString& sLine, const CString& sWindow /*= "Status"*/
 
 	// $WINDOW has to be handled last, since it can contain %
 	sPath.Replace("$NETWORK", (m_pNetwork ? m_pNetwork->GetName() : "znc"));
-	sPath.Replace("$WINDOW", sWindow.Replace_n("/", "?"));
+	sPath.Replace("$WINDOW", sWindow.Replace_n("/", "-").Replace_n("\\", "-"));
 	sPath.Replace("$USER", (m_pUser ? m_pUser->GetUserName() : "UNKNOWN"));
 
 	// Check if it's allowed to write in this specific path
@@ -85,10 +97,12 @@ void CLogMod::PutLog(const CString& sLine, const CString& sWindow /*= "Status"*/
 
 	CFile LogFile(sPath);
 	CString sLogDir = LogFile.GetDir();
-	if (!CFile::Exists(sLogDir)) CDir::MakeDir(sLogDir);
+	struct stat ModDirInfo;
+	CFile::GetInfo(GetSavePath(), ModDirInfo);
+	if (!CFile::Exists(sLogDir)) CDir::MakeDir(sLogDir, ModDirInfo.st_mode);
 	if (LogFile.Open(O_WRONLY | O_APPEND | O_CREAT))
 	{
-		LogFile.Write(CUtils::FormatTime(curtime, "[%H:%M:%S] ", m_pUser->GetTimezone()) + sLine + "\n");
+		LogFile.Write(CUtils::FormatTime(curtime, "[%H:%M:%S] ", m_pUser->GetTimezone()) + (m_bSanitize ? sLine.StripControls_n() : sLine) + "\n");
 	} else
 		DEBUG("Could not open log file [" << sPath << "]: " << strerror(errno));
 }
@@ -118,8 +132,15 @@ CString CLogMod::GetServer()
 
 bool CLogMod::OnLoad(const CString& sArgs, CString& sMessage)
 {
+	size_t uIndex = 0;
+	if (sArgs.Token(0).Equals("-sanitize"))
+	{
+		m_bSanitize = true;
+		++uIndex;
+	}
+
 	// Use load parameter as save path
-	m_sLogPath = sArgs;
+	m_sLogPath = sArgs.Token(uIndex);
 
 	// Add default filename to path if it's a folder
 	if (GetType() == CModInfo::UserModule) {
@@ -174,9 +195,10 @@ CModule::EModRet CLogMod::OnBroadcast(CString& sMessage)
 	return CONTINUE;
 }
 
-void CLogMod::OnRawMode(const CNick& OpNick, CChan& Channel, const CString& sModes, const CString& sArgs)
+void CLogMod::OnRawMode2(const CNick* pOpNick, CChan& Channel, const CString& sModes, const CString& sArgs)
 {
-	PutLog("*** " + OpNick.GetNick() + " sets mode: " + sModes + " " + sArgs, Channel);
+	const CString sNick = pOpNick ? pOpNick->GetNick() : "Server";
+	PutLog("*** " + sNick + " sets mode: " + sModes + " " + sArgs, Channel);
 }
 
 void CLogMod::OnKick(const CNick& OpNick, const CString& sKickedNick, CChan& Channel, const CString& sMessage)
@@ -282,7 +304,7 @@ template<> void TModInfo<CLogMod>(CModInfo& Info) {
 	Info.AddType(CModInfo::NetworkModule);
 	Info.AddType(CModInfo::GlobalModule);
 	Info.SetHasArgs(true);
-	Info.SetArgsHelpText("Optional path where to store logs.");
+	Info.SetArgsHelpText("[-sanitize] Optional path where to store logs.");
 	Info.SetWikiPage("log");
 }
 

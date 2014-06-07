@@ -1,12 +1,22 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
- *
- * Quiet Away and message logger
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  * Author: imaginos <imaginos@imaginos.net>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * Quiet Away and message logger
  *
  * I originally wrote this module for when I had multiple clients connected to ZNC. I would leave work and forget to close my client, arriving at home
  * and re-attaching there someone may have messaged me in commute and I wouldn't know it until I would arrive back at work the next day. I wrote it such that
@@ -16,11 +26,9 @@
 
 #define REQUIRESSL
 
-#include <znc/Client.h>
 #include <znc/User.h>
 #include <znc/IRCNetwork.h>
 #include <znc/FileUtils.h>
-#include <sys/stat.h>
 
 using std::vector;
 using std::map;
@@ -59,6 +67,7 @@ class CAway : public CModule
 	void BackCommand(const CString& sCommand) {
 		if ((m_vMessages.empty()) && (sCommand.Token(1) != "-quiet"))
 			PutModNotice("Welcome Back!");
+		Ping();
 		Back();
 	}
 
@@ -121,9 +130,9 @@ class CAway : public CModule
 	void ShowCommand(const CString& sCommand) {
 		map< CString, vector< CString> > msvOutput;
 		for (u_int a = 0; a < m_vMessages.size(); a++) {
-			CString sTime = m_vMessages[a].Token(0, false, ":");
-			CString sWhom = m_vMessages[a].Token(1, false, ":");
-			CString sMessage = m_vMessages[a].Token(2, true, ":");
+			CString sTime = m_vMessages[a].Token(0, false);
+			CString sWhom = m_vMessages[a].Token(1, false);
+			CString sMessage = m_vMessages[a].Token(2, true);
 
 			if ((sTime.empty()) || (sWhom.empty()) || (sMessage.empty())) {
 				// illegal format
@@ -449,7 +458,7 @@ private:
 	{
 		if (Nick.GetNick() == m_pNetwork->GetIRCNick().GetNick())
 			return; // ignore messages from self
-		AddMessage(CString(iTime) + ":" + Nick.GetNickMask() + ":" + sMessage);
+		AddMessage(CString(iTime) + " " + Nick.GetNickMask() + " " + sMessage);
 	}
 
 	void AddMessage(const CString & sText)

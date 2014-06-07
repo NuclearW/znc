@@ -1,13 +1,20 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <znc/User.h>
-#include <znc/znc.h>
 #include <znc/IRCNetwork.h>
 
 using std::set;
@@ -47,7 +54,7 @@ protected:
 class CPartylineMod : public CModule {
 public:
 	void ListChannelsCommand(const CString& sLine) {
-		if (!m_ssChannels.size()) {
+		if (m_ssChannels.empty()) {
 			PutModule("There are no open channels.");
 			return;
 		}
@@ -89,7 +96,7 @@ public:
 			}
 		}
 
-		while (m_ssChannels.size()) {
+		while (!m_ssChannels.empty()) {
 			delete *m_ssChannels.begin();
 			m_ssChannels.erase(m_ssChannels.begin());
 		}
@@ -174,7 +181,7 @@ public:
 			CPartylineChannel *pChan = *it;
 			// RemoveUser() might delete channels, so make sure our
 			// iterator doesn't break.
-			it++;
+			++it;
 			RemoveUser(&User, pChan, "KICK", "User deleted", true);
 		}
 
@@ -360,6 +367,10 @@ public:
 
 			PutChan(ssNicks, ":" + NICK_PREFIX + pUser->GetUserName() + "!" + pUser->GetIdent() + "@" + sHost
 					+ sCmd + pChannel->GetName() + sMsg, false, true, pUser);
+		}
+
+		if (!pUser->IsBeingDeleted() && m_ssDefaultChans.find(pChannel->GetName()) != m_ssDefaultChans.end()) {
+			JoinUser(pUser, pChannel);
 		}
 
 		if (ssNicks.empty()) {

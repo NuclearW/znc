@@ -1,16 +1,23 @@
 /*
- * Copyright (C) 2004-2013  See the AUTHORS file for details.
+ * Copyright (C) 2004-2014 ZNC, see the NOTICE file for details.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <znc/FileUtils.h>
 #include <znc/IRCSock.h>
 #include <znc/User.h>
 #include <znc/IRCNetwork.h>
-#include <znc/znc.h>
 
 class CIdentFileModule : public CModule {
 	CString m_sOrigISpoof;
@@ -48,12 +55,12 @@ public:
 	void SetFormat(const CString& sLine) {
 		SetNV("Format", sLine.Token(1, true));
 		PutModule("Format has been set to: " + GetNV("Format"));
-		PutModule("Format would be expanded to: " + m_pUser->ExpandString(GetNV("Format")));
+		PutModule("Format would be expanded to: " + ExpandString(GetNV("Format")));
 	}
 
 	void GetFormat(const CString& sLine) {
 		PutModule("Format is set to: " + GetNV("Format"));
-		PutModule("Format would be expanded to: " + m_pUser->ExpandString(GetNV("Format")));
+		PutModule("Format would be expanded to: " + ExpandString(GetNV("Format")));
 	}
 
 	void Show(const CString& sLine) {
@@ -109,7 +116,7 @@ public:
 			return false;
 		}
 
-		CString sData = m_pNetwork->ExpandString(GetNV("Format"));
+		CString sData = ExpandString(GetNV("Format"));
 
 		// If the format doesn't contain anything expandable, we'll
 		// assume this is an "old"-style format string.
